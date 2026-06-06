@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tu-org/tenant-core/internal/cache"
 	"github.com/tu-org/tenant-core/internal/domain"
 	"github.com/tu-org/tenant-core/internal/repository"
@@ -47,12 +48,19 @@ func (m *TenantResolver) resolveTenant(r *http.Request) (*domain.Tenant, error) 
 		return m.getTenantBySlug(r.Context(), claims.Tenant)
 	}
 
-	// 2. From X-Tenant-Slug header
+	// 2. From X-Tenant-ID UUID header (UUID-based shell config)
+	if idStr := r.Header.Get("X-Tenant-ID"); idStr != "" {
+		if id, err := uuid.Parse(idStr); err == nil {
+			return m.getTenantByID(r.Context(), id)
+		}
+	}
+
+	// 3. From X-Tenant-Slug header (slug-based shell config)
 	if slug := r.Header.Get("X-Tenant-Slug"); slug != "" {
 		return m.getTenantBySlug(r.Context(), slug)
 	}
 
-	// 3. From subdomain
+	// 4. From subdomain
 	host := r.Host
 	if idx := strings.Index(host, "."); idx > 0 {
 		slug := host[:idx]
@@ -62,6 +70,20 @@ func (m *TenantResolver) resolveTenant(r *http.Request) (*domain.Tenant, error) 
 	}
 
 	return nil, nil
+}
+
+func (m *TenantResolver) getTenantByID(ctx context.Context, id uuid.UUID) (*domain.Tenant, error) {
+	key := cache.TenantKey(id.String())
+	var tenant domain.Tenant
+	if err := m.cache.Get(ctx, key, &tenant); err == nil {
+		return &tenant, nil
+	}
+	t, err := m.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	_ = m.cache.Set(ctx, key, t, cache.TTLTenantConfig)
+	return t, nil
 }
 
 func (m *TenantResolver) getTenantBySlug(ctx context.Context, slug string) (*domain.Tenant, error) {

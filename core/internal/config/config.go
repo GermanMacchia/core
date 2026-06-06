@@ -47,6 +47,9 @@ type CORSConfig struct {
 type SeedConfig struct {
 	AdminEmail    string
 	AdminPassword string
+	ManagerMFEURL string
+	LoginMFEURL   string
+	AuthAPIURL    string
 }
 
 func Load() (*Config, error) {
@@ -64,6 +67,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("DB_MAX_CONNS", 25)
 	viper.SetDefault("REDIS_HOST", "localhost")
 	viper.SetDefault("REDIS_PORT", "6379")
+	viper.SetDefault("SEED_MANAGER_MFE_URL", "http://localhost:4201/src/main.single-spa.ts")
+	viper.SetDefault("SEED_LOGIN_MFE_URL", "http://localhost:5173/src/main.ts")
+	viper.SetDefault("SEED_AUTH_API_URL", "http://localhost:8081")
 
 	cfg := &Config{
 		Env:  viper.GetString("ENV"),
@@ -90,6 +96,9 @@ func Load() (*Config, error) {
 		Seed: SeedConfig{
 			AdminEmail:    viper.GetString("SEED_ADMIN_EMAIL"),
 			AdminPassword: viper.GetString("SEED_ADMIN_PASSWORD"),
+			ManagerMFEURL: viper.GetString("SEED_MANAGER_MFE_URL"),
+			LoginMFEURL:   viper.GetString("SEED_LOGIN_MFE_URL"),
+			AuthAPIURL:    viper.GetString("SEED_AUTH_API_URL"),
 		},
 	}
 

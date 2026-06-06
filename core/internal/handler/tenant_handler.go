@@ -209,6 +209,70 @@ func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, user)
 }
 
+// PublicConfig returns the tenant bootstrap config for the Shell before login.
+// Tenant is resolved from subdomain or X-Tenant-Slug header (no JWT required).
+func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromCtx(r.Context())
+	if tenant == nil {
+		response.NotFound(w)
+		return
+	}
+
+	tenantSvcs, err := h.services.GetTenantServices(r.Context(), tenant.ID)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+
+	type mfeEntry struct {
+		Slug   string `json:"slug"`
+		MFEURL string `json:"mfe_url"`
+		Public bool   `json:"public"`
+	}
+	type tenantMeta struct {
+		Slug         string `json:"slug"`
+		Name         string `json:"name"`
+		LogoURL      string `json:"logo_url,omitempty"`
+		PrimaryColor string `json:"primary_color,omitempty"`
+	}
+
+	meta := tenantMeta{Slug: tenant.Slug, Name: tenant.Name}
+	if v, ok := tenant.Config["logo_url"].(string); ok {
+		meta.LogoURL = v
+	}
+	if v, ok := tenant.Config["primary_color"].(string); ok {
+		meta.PrimaryColor = v
+	}
+
+	var authMFEURL, authAPIURL string
+	mfes := make([]mfeEntry, 0, len(tenantSvcs))
+	for _, ts := range tenantSvcs {
+		if ts.Service == nil || !ts.IsEnabled {
+			continue
+		}
+		if ts.Service.Slug == "auth" {
+			authMFEURL = ts.Service.MFEURL
+			if ts.Service.APIURL != nil {
+				authAPIURL = *ts.Service.APIURL
+			}
+			continue
+		}
+		isPublic, _ := ts.Service.Config["public"].(bool)
+		mfes = append(mfes, mfeEntry{
+			Slug:   ts.Service.Slug,
+			MFEURL: ts.Service.MFEURL,
+			Public: isPublic,
+		})
+	}
+
+	response.JSON(w, http.StatusOK, map[string]any{
+		"tenant":       meta,
+		"auth_mfe_url": authMFEURL,
+		"auth_api_url": authAPIURL,
+		"mfes":         mfes,
+	})
+}
+
 // Context returns the full tenant context for the Shell
 func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromCtx(r.Context())

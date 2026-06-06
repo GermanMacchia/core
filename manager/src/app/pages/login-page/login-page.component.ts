@@ -78,7 +78,7 @@ export class LoginPageComponent {
 		this.error.set(null)
 
 		this.http
-			.post<ApiResponse<AuthTokens>>('http://localhost:8080/api/v1/auth/login', {
+			.post<ApiResponse<AuthTokens>>('http://localhost:8081/auth/login', {
 				email: this.email,
 				password: this.password,
 			})

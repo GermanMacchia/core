@@ -56,6 +56,7 @@ func main() {
 	tenantRepo := repository.NewTenantRepo(pool)
 	serviceRepo := repository.NewServiceRepo(pool)
 	userRepo := repository.NewUserRepo(pool)
+	portalRepo := repository.NewPortalRepo(pool)
 
 	// JWT
 	jwtManager := pkgjwt.NewManager(cfg.JWT.Secret)
@@ -67,6 +68,7 @@ func main() {
 	// Handlers
 	tenantHandler := handler.NewTenantHandler(tenantSvc, serviceSvc)
 	serviceHandler := handler.NewServiceHandler(serviceSvc)
+	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo)
 
 	// Middleware
 	jwtMW := middleware.NewJWTMiddleware(jwtManager, redisCache)
@@ -87,6 +89,15 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// Public routes — no JWT required
+	r.Group(func(r chi.Router) {
+		// Legacy: tenant resolved by X-Tenant-Slug header or subdomain
+		r.With(tenantResolverMW.Resolve).Get("/api/v1/public/config", tenantHandler.PublicConfig)
+
+		// Portal bootstrap: identified by tenant UUID + portal UUID
+		r.Get("/api/v1/public/portals/{portal_id}", portalHandler.PublicConfig)
 	})
 
 	// Protected routes

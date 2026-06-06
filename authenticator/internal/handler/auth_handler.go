@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 
@@ -35,7 +36,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Email:     body.Email,
 		Password:  body.Password,
 		UserAgent: r.UserAgent(),
-		IPAddress: r.RemoteAddr,
+		IPAddress: remoteIP(r),
 	})
 	if err != nil {
 		switch err {
@@ -61,7 +62,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.auth.Refresh(r.Context(), body.RefreshToken, r.UserAgent(), r.RemoteAddr)
+	result, err := h.auth.Refresh(r.Context(), body.RefreshToken, r.UserAgent(), remoteIP(r))
 	if err != nil {
 		switch err {
 		case service.ErrTokenExpired, service.ErrTokenRevoked:
@@ -90,6 +91,14 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+}
+
+func remoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // Validate introspects a Bearer JWT and returns the decoded claims.

@@ -7,9 +7,13 @@
 		"build": "ng build",
 		"watch": "ng build --watch --configuration development",
 		"test": "ng test",
-		"format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\""
+		"format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+		"single-spa:serve": "vite serve --config vite.single-spa.config.ts",
+		"single-spa:serve:static": "concurrently \"vite build --config vite.single-spa.config.ts --watch\" \"serve dist-spa --cors -l 4201\"",
+		"single-spa:build": "vite build --config vite.single-spa.config.ts"
 	},
 	"private": true,
+	"type": "module",
 	"packageManager": "npm@11.6.2",
 	"dependencies": {
 		"@angular/common": "^22.0.0",
@@ -25,11 +29,15 @@
 		"tslib": "^2.3.0"
 	},
 	"devDependencies": {
+		"@analogjs/vite-plugin-angular": "latest",
 		"@angular/build": "^22.0.0",
 		"@angular/cli": "^22.0.0",
 		"@angular/compiler-cli": "^22.0.0",
 		"@tailwindcss/postcss": "^4.3.0",
+		"concurrently": "^9.0.0",
 		"prettier": "^3.8.1",
-		"typescript": "~6.0.2"
+		"serve": "^14.0.0",
+		"typescript": "~6.0.2",
+		"vite": "^6.0.0"
 	}
 }

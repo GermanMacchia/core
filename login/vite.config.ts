@@ -15,7 +15,7 @@ export default defineConfig(({ command }) => ({
         entry:    'src/main.ts',
         name:     'LoginMFE',
         fileName: 'login-mfe',
-        formats:  ['iife']
+        formats:  ['es']
       },
       rollupOptions: {
         output: {
