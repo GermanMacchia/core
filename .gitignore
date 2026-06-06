@@ -1,0 +1,52 @@
+# Entorno
+.env
+*.local
+.npmrc
+.claude
+.vscode
+.angular
+# Go
+core/backend/bin/
+dbconfig.yml
+*.exe
+*.test
+*.out
+
+# Node / frontend
+node_modules/
+dist/
+tmp/
+out-tsc/
+bazel-out/
+.pnpm-store/
+*.log
+npm-debug.log
+yarn-error.log
+typings/
+coverage/
+connect.lock
+
+# Angular
+.angular/cache
+.sass-cache/
+__screenshots__/
+libpeerconnection.log
+testem.log
+
+# Editores / SO
+.DS_Store
+Thumbs.db
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/mcp.json
+.history/

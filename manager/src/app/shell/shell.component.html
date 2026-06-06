@@ -1,0 +1,102 @@
+<div class="min-h-screen flex bg-base-100">
+	<!-- Sidebar -->
+	<aside class="w-56 bg-base-200 flex flex-col border-r border-base-300 shrink-0">
+		<div class="p-4 border-b border-base-300">
+			<span class="font-bold text-base tracking-tight text-base-content">Platform Manager</span>
+		</div>
+
+		<nav class="flex-1 p-2 overflow-y-auto">
+			<ul class="menu menu-sm gap-0.5">
+				<li>
+					<a routerLink="/" [routerLinkActiveOptions]="{ exact: true }" routerLinkActive="active">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-4 w-4"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0h6"
+							/>
+						</svg>
+						Dashboard
+					</a>
+				</li>
+
+				@if (auth.currentUser()?.role === 'superadmin') {
+					<li class="menu-title text-xs opacity-40 pt-3 px-2">Administración</li>
+					<li>
+						<a routerLink="/tenants" routerLinkActive="active">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-4 w-4"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+								/>
+							</svg>
+							Tenants
+						</a>
+					</li>
+					<li>
+						<a routerLink="/services" routerLinkActive="active">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-4 w-4"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+								/>
+							</svg>
+							Servicios
+						</a>
+					</li>
+				}
+			</ul>
+		</nav>
+
+		<!-- User section -->
+		<div class="p-3 border-t border-base-300">
+			@if (auth.currentUser(); as user) {
+				<div class="flex items-center gap-2 px-2 py-1">
+					<div class="avatar placeholder shrink-0">
+						<div class="bg-primary text-primary-content rounded-full w-7">
+							<span class="text-xs font-bold">{{ user.email[0].toUpperCase() }}</span>
+						</div>
+					</div>
+					<div class="min-w-0 flex-1">
+						<p class="text-xs font-medium truncate">{{ user.email }}</p>
+						<p class="text-xs text-base-content/40">{{ user.role }}</p>
+					</div>
+				</div>
+				<button
+					class="btn btn-ghost btn-xs w-full mt-1 text-error justify-start"
+					(click)="logout()"
+				>
+					Cerrar sesión
+				</button>
+			}
+		</div>
+	</aside>
+
+	<!-- Main content -->
+	<main class="flex-1 overflow-auto">
+		<router-outlet />
+	</main>
+</div>
