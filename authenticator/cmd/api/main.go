@@ -49,7 +49,8 @@ func main() {
 
 	jwtManager := pkgjwt.NewManager(cfg.JWT.Secret)
 	authRepo := repository.NewAuthRepo(pool)
-	authSvc := service.NewAuthService(authRepo, jwtManager, cfg.JWT)
+	auditRepo := repository.NewAuditRepo(pool)
+	authSvc := service.NewAuthService(authRepo, auditRepo, jwtManager, cfg.JWT)
 	authHandler := handler.NewAuthHandler(authSvc)
 
 	r := chi.NewRouter()
@@ -66,7 +67,7 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	r.Post("/auth/login", authHandler.Login)
+	r.With(loginRateLimiter(redisCache)).Post("/auth/login", authHandler.Login)
 	r.Post("/auth/refresh", authHandler.Refresh)
 	r.Post("/auth/logout", authHandler.Logout)
 	r.Get("/auth/validate", authHandler.Validate)
@@ -101,7 +102,7 @@ func main() {
 	logger.Info("server stopped")
 }
 
-// rateLimiter is a simple inline rate limiter (60 req/min per IP).
+// rateLimiter is a global rate limiter (60 req/min per IP).
 func rateLimiter(c *cache.Cache) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +111,23 @@ func rateLimiter(c *cache.Cache) func(http.Handler) http.Handler {
 			count, err := c.Incr(r.Context(), key, cache.TTLRateLimit)
 			if err == nil && count > 60 {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// loginRateLimiter applies a stricter limit (10 req/min per IP) to the login endpoint
+// to slow down brute-force credential attacks.
+func loginRateLimiter(c *cache.Cache) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := realIP(r)
+			key := cache.RateLimitKey(ip, "auth:login:strict")
+			count, err := c.Incr(r.Context(), key, cache.TTLRateLimit)
+			if err == nil && count > 10 {
+				http.Error(w, `{"error":"too many login attempts, please try again later"}`, http.StatusTooManyRequests)
 				return
 			}
 			next.ServeHTTP(w, r)

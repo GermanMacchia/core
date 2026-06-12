@@ -49,8 +49,9 @@ export class AdminService {
 		return this.http.delete(`${CORE_API}/api/v1/tenants/${id}`, { headers: this.headers })
 	}
 
-	listServices() {
-		return this.http.get<ApiResponse<Service[]>>(`${CORE_API}/api/v1/services`, {
+	listServices(all = true) {
+		const params = all ? '?all=true' : ''
+		return this.http.get<ApiResponse<Service[]>>(`${CORE_API}/api/v1/services${params}`, {
 			headers: this.headers,
 		})
 	}
@@ -102,5 +103,36 @@ export class AdminService {
 			body,
 			{ headers: this.headers },
 		)
+	}
+
+	updateTenantUser(tenantId: string, userId: string, body: { role?: string; is_active?: boolean }) {
+		return this.http.patch<ApiResponse<TenantUser>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	deleteTenantUser(tenantId: string, userId: string) {
+		return this.http.delete(
+			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`,
+			{ headers: this.headers },
+		)
+	}
+
+	getService(id: string) {
+		return this.http.get<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, {
+			headers: this.headers,
+		})
+	}
+
+	updateService(id: string, body: { name?: string; mfe_url?: string; api_url?: string; version?: string; description?: string; is_active?: boolean }) {
+		return this.http.patch<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, body, {
+			headers: this.headers,
+		})
+	}
+
+	deleteService(id: string) {
+		return this.http.delete(`${CORE_API}/api/v1/services/${id}`, { headers: this.headers })
 	}
 }

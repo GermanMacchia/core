@@ -28,10 +28,6 @@ func (s *TenantService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tena
 	return s.repo.GetByID(ctx, id)
 }
 
-func (s *TenantService) GetBySlug(ctx context.Context, slug string) (*domain.Tenant, error) {
-	return s.repo.GetBySlug(ctx, slug)
-}
-
 func (s *TenantService) List(ctx context.Context, limit, offset int) ([]*domain.Tenant, error) {
 	if limit <= 0 {
 		limit = 20
@@ -56,4 +52,12 @@ func (s *TenantService) CreateUser(ctx context.Context, input domain.CreateUserI
 		input.Role = domain.RoleMember
 	}
 	return s.userRepo.Create(ctx, input)
+}
+
+func (s *TenantService) UpdateUser(ctx context.Context, id uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
+	return s.userRepo.Update(ctx, id, input)
+}
+
+func (s *TenantService) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	return s.userRepo.Delete(ctx, id)
 }

@@ -28,7 +28,6 @@ type Plan struct {
 
 type Tenant struct {
 	ID          uuid.UUID    `json:"id"`
-	Slug        string       `json:"slug"`
 	Name        string       `json:"name"`
 	Domain      *string      `json:"domain,omitempty"`
 	PlanID      uuid.UUID    `json:"plan_id"`
@@ -41,7 +40,6 @@ type Tenant struct {
 }
 
 type CreateTenantInput struct {
-	Slug        string     `json:"slug"`
 	Name        string     `json:"name"`
 	Domain      *string    `json:"domain,omitempty"`
 	PlanID      uuid.UUID  `json:"plan_id"`
@@ -61,7 +59,6 @@ type JSONMap map[string]any
 type TenantRepository interface {
 	Create(ctx context.Context, input CreateTenantInput) (*Tenant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*Tenant, error)
-	GetBySlug(ctx context.Context, slug string) (*Tenant, error)
 	GetByDomain(ctx context.Context, domain string) (*Tenant, error)
 	List(ctx context.Context, limit, offset int) ([]*Tenant, error)
 	Update(ctx context.Context, id uuid.UUID, input UpdateTenantInput) (*Tenant, error)

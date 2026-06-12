@@ -9,7 +9,7 @@ import (
 type Claims struct {
 	jwt.RegisteredClaims
 	TenantID string   `json:"tenant_id"`
-	Tenant   string   `json:"tenant"`
+	PortalID string   `json:"portal_id,omitempty"`
 	Role     string   `json:"role"`
 	Services []string `json:"services"`
 }

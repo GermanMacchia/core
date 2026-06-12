@@ -19,9 +19,10 @@ const (
 type User struct {
 	ID           uuid.UUID  `json:"id"`
 	TenantID     uuid.UUID  `json:"tenant_id"`
-	TenantSlug   string     `json:"tenant_slug,omitempty"`
+	PortalID     *uuid.UUID `json:"portal_id,omitempty"`
 	Email        string     `json:"email"`
 	PasswordHash string     `json:"-"`
+	RoleID       uuid.UUID  `json:"role_id"`
 	Role         UserRole   `json:"role"`
 	IsActive     bool       `json:"is_active"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`

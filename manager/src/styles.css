@@ -1,2 +1,15 @@
 @import 'tailwindcss';
-@plugin "daisyui";
+@source '../node_modules/@germanmacchia/angular-ui/fesm2022/*.mjs';
+@plugin "daisyui" {
+	themes:
+		cupcake --default,
+		business;
+}
+
+lib-drawer-bar a {
+	font-size: 1rem;
+}
+
+.gm-drawer-bar_title {
+	font-size: 1.5rem;
+}

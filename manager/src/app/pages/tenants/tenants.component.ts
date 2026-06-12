@@ -1,8 +1,16 @@
-import { Component, inject, signal, OnInit } from '@angular/core'
-import { RouterLink } from '@angular/router'
-import { FormsModule } from '@angular/forms'
-import { AdminService } from '../../core/services/admin.service'
+import { Component, inject, OnInit, signal } from '@angular/core'
+import { FormBuilder, Validators } from '@angular/forms'
+import { Router } from '@angular/router'
+import type { CompactListAction, CompactListColumn, FormField } from '@germanmacchia/angular-ui'
+import {
+	CompactList,
+	CompactListCellDirective,
+	Form,
+	InfoModalService,
+	ToastService,
+} from '@germanmacchia/angular-ui'
 import { Tenant } from '../../core/models/tenant.model'
+import { AdminService } from '../../core/services/admin.service'
 
 const STATUS_BADGE: Record<string, string> = {
 	active: 'badge-success',
@@ -14,194 +22,92 @@ const STATUS_BADGE: Record<string, string> = {
 @Component({
 	selector: 'app-tenants',
 	standalone: true,
-	imports: [RouterLink, FormsModule],
+	imports: [CompactList, CompactListCellDirective, Form],
 	template: `
-		<div class="p-6 lg:p-10 max-w-6xl">
+		<div class="p-6 lg:p-10">
 			<div class="flex items-center justify-between mb-6">
 				<div>
 					<h1 class="text-2xl font-bold text-base-content">Tenants</h1>
-					<p class="text-base-content/50 text-sm">{{ total() }} registrados</p>
+					<p class="text-base-content/50 text-sm">{{ tenants().length }} registrados</p>
 				</div>
-				<button class="btn btn-primary btn-sm" onclick="modal_create.showModal()">
-					+ Nuevo tenant
+				<button class="btn btn-primary btn-sm" (click)="showCreate.set(true)">
+					<i class="bi bi-plus-lg"></i> Nuevo tenant
 				</button>
 			</div>
 
-			@if (error()) {
-				<div class="alert alert-error mb-4 text-sm">{{ error() }}</div>
-			}
-
-			<div class="card bg-base-100 shadow-sm border border-base-300">
-				<div class="overflow-x-auto">
-					<table class="table table-sm">
-						<thead>
-							<tr class="text-xs text-base-content/50 uppercase">
-								<th>Nombre</th>
-								<th>Slug</th>
-								<th>Dominio</th>
-								<th>Plan</th>
-								<th>Estado</th>
-								<th>Creado</th>
-								<th></th>
-							</tr>
-						</thead>
-						<tbody>
-							@if (loading()) {
-								<tr>
-									<td colspan="7" class="text-center py-8">
-										<span class="loading loading-spinner loading-sm"></span>
-									</td>
-								</tr>
-							} @else if (tenants().length === 0) {
-								<tr>
-									<td colspan="7" class="text-center py-8 text-base-content/40 text-sm">
-										Sin tenants registrados
-									</td>
-								</tr>
-							} @else {
-								@for (t of tenants(); track t.id) {
-									<tr class="hover">
-										<td class="font-medium">{{ t.name }}</td>
-										<td class="font-mono text-xs">{{ t.slug }}</td>
-										<td class="text-xs text-base-content/60">{{ t.domain ?? '—' }}</td>
-										<td class="text-xs">{{ t.plan?.name ?? '—' }}</td>
-										<td>
-											<span class="badge badge-sm" [class]="statusBadge(t.status)">
-												{{ t.status }}
-											</span>
-										</td>
-										<td class="text-xs text-base-content/50">{{ formatDate(t.created_at) }}</td>
-										<td class="text-right">
-											<div class="flex gap-1 justify-end">
-												<a [routerLink]="['/tenants', t.id]" class="btn btn-ghost btn-xs">Ver</a>
-												<button class="btn btn-ghost btn-xs text-error" (click)="confirmDelete(t)">
-													Eliminar
-												</button>
-											</div>
-										</td>
-									</tr>
-								}
-							}
-						</tbody>
-					</table>
-				</div>
-			</div>
-
-			@if (total() > pageSize) {
-				<div class="flex gap-2 mt-4 justify-end">
-					<button class="btn btn-sm btn-ghost" [disabled]="offset() === 0" (click)="prevPage()">
-						‹ Anterior
-					</button>
-					<button
-						class="btn btn-sm btn-ghost"
-						[disabled]="offset() + pageSize >= total()"
-						(click)="nextPage()">
-						Siguiente ›
-					</button>
-				</div>
-			}
+			<lib-compact-list
+				[items]="tenants()"
+				[columns]="columns"
+				[actions]="actions"
+				[loading]="loading()"
+				[emptyIcon]="'bi bi-building'"
+				[emptyMessage]="'Sin tenants registrados'"
+				[pageSize]="20"
+				[trackByKey]="'id'"
+				(actionClick)="onAction($event)">
+				<ng-template compactListCell="status" let-item>
+					<span class="badge badge-sm" [class]="statusBadge(item.status)">{{ item.status }}</span>
+				</ng-template>
+				<ng-template compactListCell="created_at" let-item>
+					<span class="text-xs text-base-content/60">{{ fmtDate(item.created_at) }}</span>
+				</ng-template>
+			</lib-compact-list>
 		</div>
 
-		<!-- Create Modal -->
-		<dialog id="modal_create" class="modal">
-			<div class="modal-box w-full max-w-md">
-				<h3 class="font-bold text-lg mb-4">Nuevo tenant</h3>
-
-				@if (createError()) {
-					<div class="alert alert-error mb-3 text-sm py-2">{{ createError() }}</div>
-				}
-
-				<div class="flex flex-col gap-3">
-					<label class="form-control">
-						<span class="label label-text text-xs">Nombre *</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.name"
-							placeholder="Acme Corp" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs"
-							>Slug * <span class="text-base-content/40">(único, sin espacios)</span></span
-						>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.slug"
-							placeholder="acme" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs">Dominio</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.domain"
-							placeholder="acme.example.com" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs">Plan ID *</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm font-mono text-xs"
-							[(ngModel)]="form.plan_id"
-							placeholder="UUID del plan" />
-					</label>
-				</div>
-
-				<div class="modal-action">
-					<form method="dialog">
-						<button class="btn btn-ghost btn-sm" (click)="resetForm()">Cancelar</button>
-					</form>
-					<button class="btn btn-primary btn-sm" [disabled]="creating()" (click)="create()">
-						@if (creating()) {
-							<span class="loading loading-spinner loading-xs"></span>
-						}
-						Crear
-					</button>
-				</div>
-			</div>
-			<form method="dialog" class="modal-backdrop"><button>close</button></form>
-		</dialog>
-
-		<!-- Delete Confirm Modal -->
-		<dialog id="modal_delete" class="modal">
-			<div class="modal-box max-w-sm">
-				<h3 class="font-bold text-lg">Confirmar eliminación</h3>
-				<p class="py-4 text-sm text-base-content/70">
-					¿Eliminar el tenant <strong>{{ deleteTarget()?.name }}</strong
-					>? El estado cambiará a <em>cancelled</em>.
-				</p>
-				<div class="modal-action">
-					<form method="dialog">
-						<button class="btn btn-ghost btn-sm">Cancelar</button>
-					</form>
-					<button class="btn btn-error btn-sm" [disabled]="deleting()" (click)="deleteTenant()">
-						@if (deleting()) {
-							<span class="loading loading-spinner loading-xs"></span>
-						}
-						Eliminar
-					</button>
-				</div>
-			</div>
-			<form method="dialog" class="modal-backdrop"><button>close</button></form>
-		</dialog>
+		<lib-form
+			[formGroup]="createForm"
+			[fields]="createFields"
+			[displayMode]="'modal'"
+			[title]="'Nuevo tenant'"
+			[isOpen]="showCreate()"
+			(submitEvent)="onCreate()"
+			(cancelEvent)="showCreate.set(false)" />
 	`,
 })
 export class TenantsComponent implements OnInit {
 	private admin = inject(AdminService)
+	private router = inject(Router)
+	private fb = inject(FormBuilder)
+	private toast = inject(ToastService)
+	private infoModal = inject(InfoModalService)
 
 	tenants = signal<Tenant[]>([])
-	total = signal(0)
 	loading = signal(true)
-	error = signal<string | null>(null)
-	creating = signal(false)
-	createError = signal<string | null>(null)
-	deleting = signal(false)
-	deleteTarget = signal<Tenant | null>(null)
-	offset = signal(0)
-	readonly pageSize = 20
+	showCreate = signal(false)
 
-	form = { name: '', slug: '', domain: '', plan_id: '' }
+	createForm = this.fb.group({
+		name: ['', Validators.required],
+		slug: ['', Validators.required],
+		domain: [''],
+		plan_id: ['', Validators.required],
+	})
+
+	createFields: FormField[] = [
+		{ name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Acme Corp' },
+		{ name: 'slug', label: 'Slug', type: 'text', required: true, placeholder: 'acme' },
+		{ name: 'domain', label: 'Dominio', type: 'text', placeholder: 'acme.example.com' },
+		{
+			name: 'plan_id',
+			label: 'Plan ID',
+			type: 'text',
+			required: true,
+			placeholder: 'UUID del plan',
+		},
+	]
+
+	columns: CompactListColumn<Tenant>[] = [
+		{ key: 'name', header: 'Nombre', type: 'text' },
+		{ key: 'slug', header: 'Slug', type: 'text' },
+		{ key: 'domain', header: 'Dominio', type: 'text', transform: t => t.domain ?? '—' },
+		{ key: 'plan', header: 'Plan', type: 'text', transform: t => t.plan?.name ?? '—' },
+		{ key: 'status', header: 'Estado', type: 'custom' },
+		{ key: 'created_at', header: 'Creado', type: 'custom' },
+	]
+
+	actions: CompactListAction<Tenant>[] = [
+		{ id: 'view', icon: 'bi bi-eye', tooltip: 'Ver detalle' },
+		{ id: 'delete', icon: 'bi bi-trash', tooltip: 'Eliminar', class: 'text-error' },
+	]
 
 	ngOnInit() {
 		this.load()
@@ -209,92 +115,75 @@ export class TenantsComponent implements OnInit {
 
 	load() {
 		this.loading.set(true)
-		this.error.set(null)
-		this.admin.listTenants(this.pageSize, this.offset()).subscribe({
+		this.admin.listTenants(100, 0).subscribe({
 			next: res => {
 				this.tenants.set(res.data ?? [])
-				this.total.set(res.meta?.total ?? res.data?.length ?? 0)
 				this.loading.set(false)
 			},
 			error: () => {
-				this.error.set('Error al cargar los tenants.')
+				this.toast.toast({ severity: 'error', body: 'Error al cargar los tenants.' })
 				this.loading.set(false)
 			},
 		})
 	}
 
-	create() {
-		if (!this.form.name || !this.form.slug || !this.form.plan_id) {
-			this.createError.set('Nombre, slug y plan son requeridos.')
+	onAction(event: { action: string; item: Tenant }) {
+		if (event.action === 'view') {
+			this.router.navigate(['/tenants', event.item.id])
+		} else if (event.action === 'delete') {
+			this.infoModal.openAsConfirm(
+				() => this.doDelete(event.item),
+				`¿Eliminar el tenant "${event.item.name}"?`,
+			)
+		}
+	}
+
+	onCreate() {
+		if (this.createForm.invalid) {
+			this.toast.toast({ severity: 'warning', body: 'Completá todos los campos requeridos.' })
 			return
 		}
-		this.creating.set(true)
-		this.createError.set(null)
-
+		const v = this.createForm.getRawValue()
 		const body: { slug: string; name: string; plan_id: string; domain?: string } = {
-			slug: this.form.slug,
-			name: this.form.name,
-			plan_id: this.form.plan_id,
+			slug: v.slug!,
+			name: v.name!,
+			plan_id: v.plan_id!,
 		}
-		if (this.form.domain) body.domain = this.form.domain
+		if (v.domain) body.domain = v.domain
 
 		this.admin.createTenant(body).subscribe({
 			next: res => {
 				this.tenants.update(list => [res.data, ...list])
-				this.total.update(n => n + 1)
-				this.creating.set(false)
-				this.resetForm()
-				;(document.getElementById('modal_create') as HTMLDialogElement).close()
+				this.showCreate.set(false)
+				this.createForm.reset()
+				this.toast.toast({ severity: 'success', body: `Tenant "${res.data.name}" creado.` })
 			},
 			error: err => {
-				this.createError.set(err.error?.error ?? 'Error al crear el tenant.')
-				this.creating.set(false)
+				this.toast.toast({
+					severity: 'error',
+					body: err.error?.error ?? 'Error al crear el tenant.',
+				})
 			},
 		})
 	}
 
-	confirmDelete(t: Tenant) {
-		this.deleteTarget.set(t)
-		;(document.getElementById('modal_delete') as HTMLDialogElement).showModal()
-	}
-
-	deleteTenant() {
-		const t = this.deleteTarget()
-		if (!t) return
-		this.deleting.set(true)
-		this.admin.deleteTenant(t.id).subscribe({
+	private doDelete(tenant: Tenant) {
+		this.admin.deleteTenant(tenant.id).subscribe({
 			next: () => {
-				this.tenants.update(list => list.filter(x => x.id !== t.id))
-				this.total.update(n => n - 1)
-				this.deleting.set(false)
-				this.deleteTarget.set(null)
-				;(document.getElementById('modal_delete') as HTMLDialogElement).close()
+				this.tenants.update(list => list.filter(t => t.id !== tenant.id))
+				this.toast.toast({ severity: 'success', body: `Tenant "${tenant.name}" eliminado.` })
 			},
 			error: () => {
-				this.deleting.set(false)
+				this.toast.toast({ severity: 'error', body: 'Error al eliminar el tenant.' })
 			},
 		})
-	}
-
-	resetForm() {
-		this.form = { name: '', slug: '', domain: '', plan_id: '' }
-		this.createError.set(null)
-	}
-
-	prevPage() {
-		this.offset.update(n => Math.max(0, n - this.pageSize))
-		this.load()
-	}
-	nextPage() {
-		this.offset.update(n => n + this.pageSize)
-		this.load()
 	}
 
 	statusBadge(status: string) {
 		return STATUS_BADGE[status] ?? 'badge-ghost'
 	}
 
-	formatDate(iso: string) {
+	fmtDate(iso: string) {
 		return new Date(iso).toLocaleDateString('es-AR', {
 			day: '2-digit',
 			month: 'short',

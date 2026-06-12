@@ -25,12 +25,13 @@ var (
 
 type AuthService struct {
 	repo       *repository.AuthRepo
+	audit      *repository.AuditRepo
 	jwtManager *pkgjwt.Manager
 	cfg        config.JWTConfig
 }
 
-func NewAuthService(repo *repository.AuthRepo, jwtManager *pkgjwt.Manager, cfg config.JWTConfig) *AuthService {
-	return &AuthService{repo: repo, jwtManager: jwtManager, cfg: cfg}
+func NewAuthService(repo *repository.AuthRepo, audit *repository.AuditRepo, jwtManager *pkgjwt.Manager, cfg config.JWTConfig) *AuthService {
+	return &AuthService{repo: repo, audit: audit, jwtManager: jwtManager, cfg: cfg}
 }
 
 type LoginInput struct {
@@ -71,9 +72,15 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 		return nil, ErrInvalidCredentials
 	}
 
+	// Superadmins get nil services (they bypass service-level access checks).
+	var services []string
+	if user.Role != domain.RoleSuperAdmin {
+		services, _ = s.repo.GetTenantServiceIDs(ctx, user.TenantID)
+	}
+
 	expAt := time.Now().Add(s.cfg.AccessTokenDuration())
 	accessToken, err := s.jwtManager.GenerateAccess(
-		user.ID, user.TenantID, user.TenantSlug, string(user.Role), nil, s.cfg.AccessTokenDuration(),
+		user.ID, user.TenantID, user.PortalID, user.Email, string(user.Role), services, s.cfg.AccessTokenDuration(),
 	)
 	if err != nil {
 		return nil, err
@@ -97,6 +104,15 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 	}
 
 	_ = s.repo.UpdateLastLogin(ctx, user.ID)
+
+	if s.audit != nil {
+		go s.audit.Log(context.Background(), repository.AuditEntry{
+			TenantID:  &user.TenantID,
+			UserID:    &user.ID,
+			Action:    "auth.login",
+			IPAddress: input.IPAddress,
+		})
+	}
 
 	return &AuthResult{
 		AccessToken:  accessToken,
@@ -129,9 +145,14 @@ func (s *AuthService) Refresh(ctx context.Context, rawToken, userAgent, ip strin
 		return nil, err
 	}
 
+	var services []string
+	if user.Role != domain.RoleSuperAdmin {
+		services, _ = s.repo.GetTenantServiceIDs(ctx, user.TenantID)
+	}
+
 	expAt := time.Now().Add(s.cfg.AccessTokenDuration())
 	accessToken, err := s.jwtManager.GenerateAccess(
-		user.ID, user.TenantID, user.TenantSlug, string(user.Role), nil, s.cfg.AccessTokenDuration(),
+		user.ID, user.TenantID, user.PortalID, user.Email, string(user.Role), services, s.cfg.AccessTokenDuration(),
 	)
 	if err != nil {
 		return nil, err
@@ -163,7 +184,27 @@ func (s *AuthService) Refresh(ctx context.Context, rawToken, userAgent, ip strin
 }
 
 func (s *AuthService) Logout(ctx context.Context, rawToken string) error {
-	return s.repo.RevokeRefreshToken(ctx, hashToken(rawToken))
+	hash := hashToken(rawToken)
+	rt, err := s.repo.GetRefreshToken(ctx, hash)
+	if err != nil {
+		// Token not found or already revoked — treat as success.
+		return nil
+	}
+	if err := s.repo.RevokeRefreshToken(ctx, hash); err != nil {
+		return err
+	}
+	if s.audit != nil {
+		entry := repository.AuditEntry{
+			UserID:    &rt.UserID,
+			Action:    "auth.logout",
+			IPAddress: rt.IPAddress,
+		}
+		if user, err := s.repo.GetByID(ctx, rt.UserID); err == nil {
+			entry.TenantID = &user.TenantID
+		}
+		go s.audit.Log(context.Background(), entry)
+	}
+	return nil
 }
 
 // Validate parses and validates a JWT, returning its claims.

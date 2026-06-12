@@ -11,10 +11,10 @@ dbconfig.yml
 *.exe
 *.test
 *.out
-
 # Node / frontend
 node_modules/
 dist/
+dist-spa/
 tmp/
 out-tsc/
 bazel-out/

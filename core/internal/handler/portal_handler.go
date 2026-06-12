@@ -22,9 +22,6 @@ func NewPortalHandler(portals *repository.PortalRepo, tenants *repository.Tenant
 //
 //	GET /api/v1/public/portals/{portal_id}
 //	Header: X-Tenant-ID: <tenant_uuid>
-//
-// The Shell uses this to register its MFEs. Each service entry includes
-// per-service auth_mfe_url / auth_api_url extracted from the merged config.
 func (h *PortalHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	portalID, err := uuid.Parse(chi.URLParam(r, "portal_id"))
 	if err != nil {
@@ -63,39 +60,28 @@ func (h *PortalHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 
 	type tenantOut struct {
 		ID   string `json:"id"`
-		Slug string `json:"slug"`
 		Name string `json:"name"`
 	}
 	type portalOut struct {
 		ID     string         `json:"id"`
-		Slug   string         `json:"slug"`
 		Name   string         `json:"name"`
 		Config map[string]any `json:"config,omitempty"`
 	}
 	type serviceOut struct {
-		ID         string  `json:"id"`
-		Slug       string  `json:"slug"`
-		Name       string  `json:"name"`
-		MFEURL     string  `json:"mfe_url"`
-		APIURL     *string `json:"api_url,omitempty"`
-		AuthMFEURL string  `json:"auth_mfe_url,omitempty"`
-		AuthAPIURL string  `json:"auth_api_url,omitempty"`
-		Public     bool    `json:"public"`
-		SortOrder  int     `json:"sort_order"`
+		Slug         string   `json:"slug"`
+		MFEURL       string   `json:"mfe_url"`
+		AuthAPIURL   string   `json:"auth_api_url,omitempty"`
+		Public       bool     `json:"public"`
+		AllowedRoles []string `json:"allowed_roles,omitempty"`
+		SortOrder    int      `json:"sort_order"`
 	}
 
 	svcList := make([]serviceOut, 0, len(services))
 	for _, svc := range services {
 		out := serviceOut{
-			ID:        svc.ServiceID.String(),
 			Slug:      svc.Slug,
-			Name:      svc.Name,
 			MFEURL:    svc.MFEURL,
-			APIURL:    svc.APIURL,
 			SortOrder: svc.SortOrder,
-		}
-		if v, ok := svc.Config["auth_mfe_url"].(string); ok {
-			out.AuthMFEURL = v
 		}
 		if v, ok := svc.Config["auth_api_url"].(string); ok {
 			out.AuthAPIURL = v
@@ -103,18 +89,25 @@ func (h *PortalHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		if v, ok := svc.Config["public"].(bool); ok {
 			out.Public = v
 		}
+		if v, ok := svc.Config["allowed_roles"].([]any); ok {
+			roles := make([]string, 0, len(v))
+			for _, r := range v {
+				if s, ok := r.(string); ok {
+					roles = append(roles, s)
+				}
+			}
+			out.AllowedRoles = roles
+		}
 		svcList = append(svcList, out)
 	}
 
 	response.JSON(w, http.StatusOK, map[string]any{
 		"tenant": tenantOut{
 			ID:   tenant.ID.String(),
-			Slug: tenant.Slug,
 			Name: tenant.Name,
 		},
 		"portal": portalOut{
 			ID:     portal.ID.String(),
-			Slug:   portal.Slug,
 			Name:   portal.Name,
 			Config: portal.Config,
 		},

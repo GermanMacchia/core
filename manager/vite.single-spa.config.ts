@@ -9,6 +9,7 @@ export default defineConfig({
   ],
   server: {
     port: 4201,
+    origin: 'http://localhost:4201',
     headers: {
       'Access-Control-Allow-Origin': '*',
     },
@@ -25,6 +26,7 @@ export default defineConfig({
     },
     outDir: 'dist-spa',
     sourcemap: true,
+    assetsInlineLimit: 1_000_000,
     rollupOptions: {
       // Bundle everything — shell imports this as a standalone ES module
       external: [],

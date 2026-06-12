@@ -43,8 +43,8 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
-	if input.Slug == "" || input.Name == "" {
-		response.BadRequest(w, "slug and name are required")
+	if input.Name == "" {
+		response.BadRequest(w, "name is required")
 		return
 	}
 
@@ -62,6 +62,10 @@ func (h *TenantHandler) Get(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
+	if !allowTenantAccess(r, id) {
+		middleware.Forbidden(w)
+		return
+	}
 
 	tenant, err := h.tenants.GetByID(r.Context(), id)
 	if err != nil {
@@ -75,6 +79,10 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	if !allowTenantAccess(r, id) {
+		middleware.Forbidden(w)
 		return
 	}
 
@@ -112,6 +120,10 @@ func (h *TenantHandler) GetServices(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
+	if !allowTenantAccess(r, id) {
+		middleware.Forbidden(w)
+		return
+	}
 
 	svcs, err := h.services.GetTenantServices(r.Context(), id)
 	if err != nil {
@@ -127,20 +139,28 @@ func (h *TenantHandler) EnableService(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
+	if !allowTenantAccess(r, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
 
 	var body struct {
-		ServiceID      uuid.UUID      `json:"service_id"`
-		ConfigOverride domain.JSONMap `json:"config_override"`
+		ServiceID uuid.UUID `json:"service_id"`
+		Slug      string    `json:"slug"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
+	if body.Slug == "" {
+		response.BadRequest(w, "slug is required")
+		return
+	}
 
 	ts, err := h.services.EnableForTenant(r.Context(), domain.EnableServiceInput{
-		TenantID:       tenantID,
-		ServiceID:      body.ServiceID,
-		ConfigOverride: body.ConfigOverride,
+		TenantID:  tenantID,
+		ServiceID: body.ServiceID,
+		Slug:      body.Slug,
 	})
 	if err != nil {
 		response.InternalError(w)
@@ -153,6 +173,10 @@ func (h *TenantHandler) DisableService(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	if !allowTenantAccess(r, tenantID) {
+		middleware.Forbidden(w)
 		return
 	}
 	serviceID, err := uuid.Parse(chi.URLParam(r, "sid"))
@@ -174,6 +198,10 @@ func (h *TenantHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
+	if !allowTenantAccess(r, id) {
+		middleware.Forbidden(w)
+		return
+	}
 
 	users, err := h.tenants.GetUsers(r.Context(), id)
 	if err != nil {
@@ -187,6 +215,10 @@ func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	if !allowTenantAccess(r, tenantID) {
+		middleware.Forbidden(w)
 		return
 	}
 
@@ -209,8 +241,61 @@ func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, user)
 }
 
+func (h *TenantHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	if !allowTenantAccess(r, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	userID, err := uuid.Parse(chi.URLParam(r, "uid"))
+	if err != nil {
+		response.BadRequest(w, "invalid user id")
+		return
+	}
+
+	var input domain.UpdateUserInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+
+	user, err := h.tenants.UpdateUser(r.Context(), userID, input)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusOK, user)
+}
+
+func (h *TenantHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	if !allowTenantAccess(r, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	userID, err := uuid.Parse(chi.URLParam(r, "uid"))
+	if err != nil {
+		response.BadRequest(w, "invalid user id")
+		return
+	}
+
+	if err := h.tenants.DeleteUser(r.Context(), userID); err != nil {
+		response.InternalError(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // PublicConfig returns the tenant bootstrap config for the Shell before login.
-// Tenant is resolved from subdomain or X-Tenant-Slug header (no JWT required).
+// Tenant is resolved from X-Tenant-ID header or domain (no JWT required).
 func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromCtx(r.Context())
 	if tenant == nil {
@@ -230,13 +315,13 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		Public bool   `json:"public"`
 	}
 	type tenantMeta struct {
-		Slug         string `json:"slug"`
+		ID           string `json:"id"`
 		Name         string `json:"name"`
 		LogoURL      string `json:"logo_url,omitempty"`
 		PrimaryColor string `json:"primary_color,omitempty"`
 	}
 
-	meta := tenantMeta{Slug: tenant.Slug, Name: tenant.Name}
+	meta := tenantMeta{ID: tenant.ID.String(), Name: tenant.Name}
 	if v, ok := tenant.Config["logo_url"].(string); ok {
 		meta.LogoURL = v
 	}
@@ -244,36 +329,26 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		meta.PrimaryColor = v
 	}
 
-	var authMFEURL, authAPIURL string
 	mfes := make([]mfeEntry, 0, len(tenantSvcs))
 	for _, ts := range tenantSvcs {
 		if ts.Service == nil || !ts.IsEnabled {
 			continue
 		}
-		if ts.Service.Slug == "auth" {
-			authMFEURL = ts.Service.MFEURL
-			if ts.Service.APIURL != nil {
-				authAPIURL = *ts.Service.APIURL
-			}
-			continue
-		}
 		isPublic, _ := ts.Service.Config["public"].(bool)
 		mfes = append(mfes, mfeEntry{
-			Slug:   ts.Service.Slug,
+			Slug:   ts.Slug,
 			MFEURL: ts.Service.MFEURL,
 			Public: isPublic,
 		})
 	}
 
 	response.JSON(w, http.StatusOK, map[string]any{
-		"tenant":       meta,
-		"auth_mfe_url": authMFEURL,
-		"auth_api_url": authAPIURL,
-		"mfes":         mfes,
+		"tenant": meta,
+		"mfes":   mfes,
 	})
 }
 
-// Context returns the full tenant context for the Shell
+// Context returns the full tenant context for the Shell after login.
 func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.ClaimsFromCtx(r.Context())
 	if claims == nil {
@@ -303,7 +378,6 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	}
 	type tenantCtx struct {
 		ID   string `json:"id"`
-		Slug string `json:"slug"`
 		Name string `json:"name"`
 		Plan string `json:"plan"`
 	}
@@ -311,7 +385,7 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	svcItems := make([]serviceItem, 0, len(tenantSvcs))
 	for _, ts := range tenantSvcs {
 		if ts.Service != nil {
-			svcItems = append(svcItems, serviceItem{Slug: ts.Service.Slug, MFEURL: ts.Service.MFEURL})
+			svcItems = append(svcItems, serviceItem{Slug: ts.Slug, MFEURL: ts.Service.MFEURL})
 		}
 	}
 
@@ -323,7 +397,6 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{
 		"tenant": tenantCtx{
 			ID:   tenant.ID.String(),
-			Slug: tenant.Slug,
 			Name: tenant.Name,
 			Plan: planName,
 		},
@@ -333,4 +406,12 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 			Role: claims.Role,
 		},
 	})
+}
+
+func allowTenantAccess(r *http.Request, tenantID uuid.UUID) bool {
+	claims := middleware.ClaimsFromCtx(r.Context())
+	if claims == nil {
+		return false
+	}
+	return claims.Role == "superadmin" || claims.TenantID == tenantID.String()
 }

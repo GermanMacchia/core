@@ -20,8 +20,20 @@ func (s *ServiceSvc) Create(ctx context.Context, input domain.CreateServiceInput
 	return s.repo.Create(ctx, input)
 }
 
+func (s *ServiceSvc) GetByID(ctx context.Context, id uuid.UUID) (*domain.Service, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
 func (s *ServiceSvc) List(ctx context.Context, onlyActive bool) ([]*domain.Service, error) {
 	return s.repo.List(ctx, onlyActive)
+}
+
+func (s *ServiceSvc) Update(ctx context.Context, id uuid.UUID, input domain.UpdateServiceInput) (*domain.Service, error) {
+	return s.repo.Update(ctx, id, input)
+}
+
+func (s *ServiceSvc) Delete(ctx context.Context, id uuid.UUID) error {
+	return s.repo.Delete(ctx, id)
 }
 
 func (s *ServiceSvc) EnableForTenant(ctx context.Context, input domain.EnableServiceInput) (*domain.TenantService, error) {

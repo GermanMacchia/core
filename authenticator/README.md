@@ -66,13 +66,19 @@ Authorization: Bearer <JWT>
 // Response 200 — claims decodificados
 {
   "data": {
-    "sub": "uuid-del-usuario",
+    "sub":       "uuid-del-usuario",
     "tenant_id": "uuid-del-tenant",
-    "role": "admin",
-    "exp": 1234567890
+    "tenant":    "acme-corp",
+    "role":      "admin",
+    "services":  ["uuid-svc-1", "uuid-svc-2"],
+    "exp":       1234567890
   }
 }
 ```
+
+> `services` contiene los UUIDs de los servicios habilitados para el tenant del usuario.  
+> Para usuarios con rol `superadmin`, el campo llega vacío (`[]`) — ese rol tiene acceso irrestricto.
+
 
 ---
 
@@ -135,7 +141,7 @@ Todos los errores siguen el formato:
 |---|---|
 | `400` | Request inválido o campos faltantes |
 | `401` | Credenciales incorrectas o token inválido/expirado |
-| `429` | Rate limit superado (60 req/min por IP) |
+| `429` | Rate limit superado — global: 60 req/min por IP; `/auth/login` además tiene límite estricto de 10 req/min por IP |
 | `500` | Error interno del servidor |
 
 ---
@@ -151,9 +157,9 @@ authenticator/
 │   ├── db/            # Pool PostgreSQL (pgx/v5)
 │   ├── domain/        # User, RefreshToken, UserRepository interface
 │   ├── handler/       # auth_handler.go
-│   ├── middleware/    # CORS
-│   ├── repository/    # auth_repo.go (queries SQL)
-│   └── service/       # auth_service.go (bcrypt, sign, refresh rotation)
+│   ├── middleware/    # CORS + security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
+│   ├── repository/    # auth_repo.go (queries SQL), audit_repo.go (audit_logs)
+│   └── service/       # auth_service.go (bcrypt, sign, refresh rotation, audit)
 ├── pkg/
 │   ├── jwt/           # Sign() + Verify()
 │   └── response/      # Wrappers de respuesta HTTP

@@ -11,7 +11,8 @@ import (
 type Claims struct {
 	jwt.RegisteredClaims
 	TenantID string   `json:"tenant_id"`
-	Tenant   string   `json:"tenant"`
+	PortalID string   `json:"portal_id,omitempty"`
+	Email    string   `json:"email"`
 	Role     string   `json:"role"`
 	Services []string `json:"services"`
 }
@@ -26,7 +27,8 @@ func NewManager(secret string) *Manager {
 
 func (m *Manager) GenerateAccess(
 	userID, tenantID uuid.UUID,
-	tenantSlug, role string,
+	portalID *uuid.UUID,
+	email, role string,
 	services []string,
 	ttl time.Duration,
 ) (string, error) {
@@ -39,9 +41,12 @@ func (m *Manager) GenerateAccess(
 			ID:        uuid.New().String(),
 		},
 		TenantID: tenantID.String(),
-		Tenant:   tenantSlug,
+		Email:    email,
 		Role:     role,
 		Services: services,
+	}
+	if portalID != nil {
+		claims.PortalID = portalID.String()
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(m.secret)

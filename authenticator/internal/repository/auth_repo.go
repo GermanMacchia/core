@@ -22,14 +22,15 @@ func NewAuthRepo(db *pgxpool.Pool) *AuthRepo {
 func (r *AuthRepo) GetByEmail(ctx context.Context, tenantID uuid.UUID, email string) (*domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRow(ctx, `
-		SELECT u.id, u.tenant_id, t.slug, u.email, u.password_hash, u.role,
+		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
+		       u.role_id, ro.name,
 		       u.is_active, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
-		JOIN tenants t ON t.id = u.tenant_id
+		JOIN roles ro ON ro.id = u.role_id
 		WHERE u.tenant_id = $1 AND u.email = $2
 	`, tenantID, email).Scan(
-		&u.ID, &u.TenantID, &u.TenantSlug, &u.Email, &u.PasswordHash,
-		&u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
+		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get user by email: %w", err)
@@ -40,15 +41,16 @@ func (r *AuthRepo) GetByEmail(ctx context.Context, tenantID uuid.UUID, email str
 func (r *AuthRepo) GetByEmailGlobal(ctx context.Context, email string) (*domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRow(ctx, `
-		SELECT u.id, u.tenant_id, t.slug, u.email, u.password_hash, u.role,
+		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
+		       u.role_id, ro.name,
 		       u.is_active, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
-		JOIN tenants t ON t.id = u.tenant_id
-		WHERE u.email = $1 AND u.role = 'superadmin'
+		JOIN roles ro ON ro.id = u.role_id
+		WHERE u.email = $1 AND ro.name = 'superadmin'
 		LIMIT 1
 	`, email).Scan(
-		&u.ID, &u.TenantID, &u.TenantSlug, &u.Email, &u.PasswordHash,
-		&u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
+		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get user by email global: %w", err)
@@ -59,19 +61,43 @@ func (r *AuthRepo) GetByEmailGlobal(ctx context.Context, email string) (*domain.
 func (r *AuthRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRow(ctx, `
-		SELECT u.id, u.tenant_id, t.slug, u.email, u.password_hash, u.role,
+		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
+		       u.role_id, ro.name,
 		       u.is_active, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
-		JOIN tenants t ON t.id = u.tenant_id
+		JOIN roles ro ON ro.id = u.role_id
 		WHERE u.id = $1
 	`, id).Scan(
-		&u.ID, &u.TenantID, &u.TenantSlug, &u.Email, &u.PasswordHash,
-		&u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
+		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 	return &u, nil
+}
+
+func (r *AuthRepo) GetTenantServiceIDs(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT s.id::text
+		FROM tenant_services ts
+		JOIN services s ON s.id = ts.service_id
+		WHERE ts.tenant_id = $1 AND ts.is_enabled = TRUE AND s.is_active = TRUE
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get tenant service ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *AuthRepo) UpdateLastLogin(ctx context.Context, id uuid.UUID) error {

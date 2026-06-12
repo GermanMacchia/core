@@ -74,6 +74,7 @@ func main() {
 	jwtMW := middleware.NewJWTMiddleware(jwtManager, redisCache)
 	tenantResolverMW := middleware.NewTenantResolver(tenantRepo, redisCache)
 	rateLimiterMW := middleware.NewRateLimiter(redisCache, 60)
+	apiKeyMW := middleware.NewAPIKeyMiddleware(cfg.PublicAPIKey)
 
 	// Router
 	r := chi.NewRouter()
@@ -91,12 +92,10 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Public routes — no JWT required
+	// Public routes — API key required, no JWT
 	r.Group(func(r chi.Router) {
-		// Legacy: tenant resolved by X-Tenant-Slug header or subdomain
+		r.Use(apiKeyMW.Verify)
 		r.With(tenantResolverMW.Resolve).Get("/api/v1/public/config", tenantHandler.PublicConfig)
-
-		// Portal bootstrap: identified by tenant UUID + portal UUID
 		r.Get("/api/v1/public/portals/{portal_id}", portalHandler.PublicConfig)
 	})
 
@@ -115,9 +114,12 @@ func main() {
 		r.Delete("/api/v1/tenants/{id}/services/{sid}", tenantHandler.DisableService)
 		r.Get("/api/v1/tenants/{id}/users", tenantHandler.GetUsers)
 		r.Post("/api/v1/tenants/{id}/users", tenantHandler.CreateUser)
+		r.Patch("/api/v1/tenants/{id}/users/{uid}", tenantHandler.UpdateUser)
+		r.Delete("/api/v1/tenants/{id}/users/{uid}", tenantHandler.DeleteUser)
 
 		// Service catalog
 		r.Get("/api/v1/services", serviceHandler.List)
+		r.Get("/api/v1/services/{id}", serviceHandler.Get)
 
 		// Superadmin only
 		r.Group(func(r chi.Router) {
@@ -126,6 +128,8 @@ func main() {
 			r.Post("/api/v1/tenants", tenantHandler.Create)
 			r.Delete("/api/v1/tenants/{id}", tenantHandler.Delete)
 			r.Post("/api/v1/services", serviceHandler.Create)
+			r.Patch("/api/v1/services/{id}", serviceHandler.Update)
+			r.Delete("/api/v1/services/{id}", serviceHandler.Delete)
 		})
 	})
 

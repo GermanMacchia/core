@@ -120,7 +120,6 @@ func (h *AuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{
 		"sub":       claims.Subject,
 		"tenant_id": claims.TenantID,
-		"tenant":    claims.Tenant,
 		"role":      claims.Role,
 		"services":  claims.Services,
 		"exp":       claims.ExpiresAt.Time.Unix(),

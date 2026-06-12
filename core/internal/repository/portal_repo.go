@@ -17,15 +17,14 @@ func NewPortalRepo(db *pgxpool.Pool) *PortalRepo {
 	return &PortalRepo{db: db}
 }
 
-// GetByID fetches a portal and verifies it belongs to tenantID.
 func (r *PortalRepo) GetByID(ctx context.Context, portalID, tenantID uuid.UUID) (*domain.Portal, error) {
 	var p domain.Portal
 	err := r.db.QueryRow(ctx, `
-		SELECT id, tenant_id, slug, name, domain, description, config, is_active, created_at, updated_at
+		SELECT id, tenant_id, name, domain, description, config, is_active, created_at, updated_at
 		FROM tenant_portals
 		WHERE id = $1 AND tenant_id = $2 AND is_active = TRUE
 	`, portalID, tenantID).Scan(
-		&p.ID, &p.TenantID, &p.Slug, &p.Name, &p.Domain, &p.Description,
+		&p.ID, &p.TenantID, &p.Name, &p.Domain, &p.Description,
 		&p.Config, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -34,16 +33,13 @@ func (r *PortalRepo) GetByID(ctx context.Context, portalID, tenantID uuid.UUID) 
 	return &p, nil
 }
 
-// GetServices returns the enabled services for a portal.
-// Config is the merged result of service.config || portal_services.config_override.
 func (r *PortalRepo) GetServices(ctx context.Context, portalID uuid.UUID) ([]*domain.PortalService, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
 			s.id,
-			s.slug,
+			ts.slug,
 			s.name,
 			s.mfe_url,
-			s.api_url,
 			s.config || ps.config_override AS config,
 			ps.sort_order
 		FROM portal_services ps
@@ -64,7 +60,7 @@ func (r *PortalRepo) GetServices(ctx context.Context, portalID uuid.UUID) ([]*do
 	for rows.Next() {
 		var ps domain.PortalService
 		if err := rows.Scan(
-			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.APIURL,
+			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL,
 			&ps.Config, &ps.SortOrder,
 		); err != nil {
 			return nil, err

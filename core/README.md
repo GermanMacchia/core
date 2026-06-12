@@ -1,6 +1,6 @@
 # Tenant Core API
 
-API central de gestión de tenants, autenticación y servicios.  
+API central de gestión de tenants, portales, servicios y usuarios.  
 **Stack:** Go 1.22 · PostgreSQL 16 · Redis 7 · Chi router
 
 ---
@@ -27,15 +27,26 @@ cp .env.example .env
 Editar `.env` con los valores reales:
 
 ```env
+# Base de datos
 DB_PASSWORD=tu_password_seguro
+
+# Redis
 REDIS_PASSWORD=tu_redis_password
+
+# JWT — mínimo 32 caracteres aleatorios
 JWT_SECRET=cadena_aleatoria_larga_y_segura
+# Generá uno con: openssl rand -hex 32
+
+# API key pública para el shell (header X-Api-Key)
+PUBLIC_API_KEY=clave_publica_del_shell
+
+# Seed inicial (se pueden remover después del primer arranque)
 SEED_ADMIN_EMAIL=admin@tu-dominio.com
 SEED_ADMIN_PASSWORD=password_inicial
+SEED_AUTH_API_URL=http://localhost:8081
+SEED_LOGIN_MFE_URL=http://localhost:5173/src/main.ts
+SEED_MANAGER_MFE_URL=http://localhost:4201/src/main.single-spa.ts
 ```
-
-> **JWT_SECRET** debe tener al menos 32 caracteres aleatorios.  
-> Generá uno con: `openssl rand -hex 32`
 
 ---
 
@@ -52,7 +63,7 @@ docker compose ps
 Esperar hasta que postgres muestre `healthy`:
 
 ```
-NAME          STATUS
+NAME           STATUS
 core-postgres  healthy
 core-redis     running
 ```
@@ -89,7 +100,7 @@ sql-migrate status   # estado de cada migración
 sql-migrate down     # revierte la última migración
 ```
 
-Las 8 migraciones crean: `plans`, `tenants`, `services`, `tenant_services`, `users`, `refresh_tokens`, `audit_logs`, `tenant_portals` + `portal_services`.
+Las migraciones crean: `plans`, `tenants`, `roles`, `services`, `tenant_services`, `users`, `refresh_tokens`, `audit_logs`, `tenant_portals`, `portal_services`, `config_definitions`.
 
 ---
 
@@ -128,18 +139,38 @@ curl http://localhost:8080/health
 
 ---
 
-## 6. Seed — superadmin inicial
+## 6. Seed — datos iniciales
 
-El Core crea el superadmin **automáticamente** al arrancar si las variables están presentes en `.env`:
+El Core crea el superadmin y la infraestructura del portal de administración **automáticamente** al arrancar si las variables están presentes en `.env`.
 
-```env
-SEED_ADMIN_EMAIL=admin@tu-dominio.com
-SEED_ADMIN_PASSWORD=password_seguro
-```
+El seed es **idempotente** — todas las sentencias usan `ON CONFLICT DO UPDATE`, por lo que puede correr en cada arranque sin efectos secundarios.
 
-El seed es **idempotente** — si el usuario ya existe, lo omite sin error. Una vez creado, las variables pueden removerse del `.env`.
+Lo que crea el seed:
+
+| Recurso | ID fijo | Descripción |
+|---|---|---|
+| Tenant `Platform` | `...0001` | Tenant raíz de la plataforma |
+| Portal `Admin Portal` | `...0002` | Portal de administración |
+| Servicio `Login` | `...0010` | MFE de login (`public: true`) |
+| Servicio `Manager` | `...0011` | MFE de gestión de tenants |
+| Usuario superadmin | — | Creado solo si no existe |
 
 > **Producción:** inyectá `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` como secrets del proveedor (AWS Secrets Manager, Vault, etc.) solo durante el primer deploy. El arranque loguea un warning si detecta `ENV=production` con las variables activas.
+
+---
+
+## Roles
+
+Los roles son una tabla fija (`roles`) con UUIDs estables. El nombre del rol viaja en el JWT.
+
+| Nombre | UUID (`...`) | Descripción |
+|---|---|---|
+| `superadmin` | `0101` | Acceso total a la plataforma |
+| `admin` | `0102` | Administrador del tenant |
+| `member` | `0103` | Miembro del tenant |
+| `viewer` | `0104` | Acceso de solo lectura |
+
+Las rutas de gestión de usuarios aceptan el nombre del rol como string (`"admin"`, etc.). El repositorio resuelve el nombre a `role_id` internamente.
 
 ---
 
@@ -149,7 +180,58 @@ Base URL: `http://localhost:8080/api/v1`
 
 > La autenticación (login / refresh / logout / validate) la gestiona el **Authenticator Service** en `:8081`. Ver `authenticator/README.md`.
 
-### Contexto del tenant (endpoint principal para el Shell)
+---
+
+### Bootstrap del shell (endpoint principal)
+
+Endpoint público — el shell lo llama antes del login para obtener la configuración del portal.
+
+| Método | Ruta | Auth |
+|---|---|---|
+| `GET` | `/public/portals/:portal_id` | `X-Api-Key` + `X-Tenant-ID` |
+
+```json
+// Response 200
+{
+  "tenant": {
+    "id": "uuid",
+    "name": "Acme Corp"
+  },
+  "portal": {
+    "id": "uuid",
+    "name": "Admin Portal",
+    "config": {
+      "auth_api_url": "http://localhost:8081",
+      "login_slug": "login"
+    }
+  },
+  "services": [
+    {
+      "id": "uuid",
+      "slug": "login",
+      "name": "Login",
+      "mfe_url": "http://localhost:5173/src/main.ts",
+      "public": true,
+      "sort_order": 0
+    },
+    {
+      "id": "uuid",
+      "slug": "manager",
+      "name": "Manager",
+      "mfe_url": "http://localhost:4201/src/main.single-spa.ts",
+      "public": false,
+      "allowed_roles": ["admin", "superadmin"],
+      "sort_order": 1
+    }
+  ]
+}
+```
+
+El shell usa `portal.config.login_slug` para saber a dónde redirigir al usuario no autenticado. Si `login_slug` está ausente, el portal es completamente público.
+
+---
+
+### Contexto autenticado
 
 | Método | Ruta | Auth |
 |---|---|---|
@@ -158,21 +240,17 @@ Base URL: `http://localhost:8080/api/v1`
 ```json
 // Response 200
 {
-  "data": {
-    "tenant": {
-      "id": "uuid",
-      "slug": "acme-corp",
-      "name": "Acme Corp",
-      "plan": "pro"
-    },
-    "services": [
-      { "slug": "billing",   "mfe_url": "https://cdn.x.com/billing/remoteEntry.js" },
-      { "slug": "analytics", "mfe_url": "https://cdn.x.com/analytics/remoteEntry.js" }
-    ],
-    "user": {
-      "id": "uuid",
-      "role": "admin"
-    }
+  "tenant": {
+    "id": "uuid",
+    "name": "Acme Corp",
+    "plan": "enterprise"
+  },
+  "services": [
+    { "slug": "manager", "mfe_url": "http://localhost:4201/src/main.single-spa.ts" }
+  ],
+  "user": {
+    "id": "uuid",
+    "role": "admin"
   }
 }
 ```
@@ -181,14 +259,15 @@ Base URL: `http://localhost:8080/api/v1`
 
 ### Tenants
 
-> Rutas marcadas `[superadmin]` requieren `role: superadmin` en el JWT.
+> Rutas marcadas `[superadmin]` requieren `role: superadmin` en el JWT.  
+> Para rutas sin esa marca, el acceso está restringido por **ownership**: un usuario no-superadmin solo puede operar sobre su propio tenant. Intentar acceder al tenant de otro devuelve `403 Forbidden`.
 
-| Método | Ruta | Auth | Rol |
+| Método | Ruta | Auth | Rol / Acceso |
 |---|---|---|---|
 | `GET` | `/tenants` | Bearer JWT | superadmin |
 | `POST` | `/tenants` | Bearer JWT | superadmin |
-| `GET` | `/tenants/:id` | Bearer JWT | cualquiera |
-| `PATCH` | `/tenants/:id` | Bearer JWT | cualquiera |
+| `GET` | `/tenants/:id` | Bearer JWT | superadmin **o** tenant propio |
+| `PATCH` | `/tenants/:id` | Bearer JWT | superadmin **o** tenant propio |
 | `DELETE` | `/tenants/:id` | Bearer JWT | superadmin |
 
 #### `POST /tenants`
@@ -196,7 +275,6 @@ Base URL: `http://localhost:8080/api/v1`
 ```json
 // Request
 {
-  "slug": "acme-corp",
   "name": "Acme Corp",
   "plan_id": "uuid-del-plan",
   "domain": "acme.app.com"
@@ -206,7 +284,6 @@ Base URL: `http://localhost:8080/api/v1`
 {
   "data": {
     "id": "uuid",
-    "slug": "acme-corp",
     "name": "Acme Corp",
     "status": "active",
     "plan_id": "uuid",
@@ -230,30 +307,38 @@ Base URL: `http://localhost:8080/api/v1`
 
 ### Servicios del tenant
 
-| Método | Ruta | Auth | Descripción |
-|---|---|---|---|
-| `GET` | `/tenants/:id/services` | Bearer JWT | Servicios habilitados |
-| `POST` | `/tenants/:id/services` | Bearer JWT | Habilitar servicio |
-| `DELETE` | `/tenants/:id/services/:sid` | Bearer JWT | Deshabilitar servicio |
+> Aplica la misma regla de ownership que en Tenants.
 
-#### `POST /tenants/:id/services`
+| Método | Ruta | Auth | Rol / Acceso |
+|---|---|---|---|
+| `GET` | `/tenants/:id/services` | Bearer JWT | superadmin **o** tenant propio |
+| `POST` | `/tenants/:id/services` | Bearer JWT | superadmin **o** tenant propio |
+| `DELETE` | `/tenants/:id/services/:sid` | Bearer JWT | superadmin |
+
+#### `POST /tenants/:id/services` — habilitar un servicio para un tenant
 
 ```json
 // Request
 {
   "service_id": "uuid-del-servicio",
-  "config_override": {}
+  "slug": "billing"
 }
 ```
+
+> `slug` define la ruta de montaje del MFE para este tenant (ej: `/billing`). Puede diferir entre tenants para el mismo servicio.
 
 ---
 
 ### Usuarios del tenant
 
-| Método | Ruta | Auth | Descripción |
+> Aplica la misma regla de ownership que en Tenants.
+
+| Método | Ruta | Auth | Rol / Acceso |
 |---|---|---|---|
-| `GET` | `/tenants/:id/users` | Bearer JWT | Listar usuarios del tenant |
-| `POST` | `/tenants/:id/users` | Bearer JWT | Crear usuario en el tenant |
+| `GET` | `/tenants/:id/users` | Bearer JWT | superadmin **o** tenant propio |
+| `POST` | `/tenants/:id/users` | Bearer JWT | superadmin **o** tenant propio |
+| `PATCH` | `/tenants/:id/users/:uid` | Bearer JWT | superadmin **o** tenant propio |
+| `DELETE` | `/tenants/:id/users/:uid` | Bearer JWT | superadmin |
 
 #### `POST /tenants/:id/users`
 
@@ -262,7 +347,21 @@ Base URL: `http://localhost:8080/api/v1`
 {
   "email": "usuario@acme.com",
   "password": "password_seguro",
-  "role": "admin"
+  "role": "admin",
+  "portal_id": "uuid-del-portal"
+}
+```
+
+> `portal_id` es opcional. Un usuario sin `portal_id` tiene acceso a todos los portales del tenant.
+
+#### `PATCH /tenants/:id/users/:uid`
+
+```json
+// Request — todos los campos son opcionales
+{
+  "role": "viewer",
+  "portal_id": "uuid-del-portal",
+  "is_active": false
 }
 ```
 
@@ -274,6 +373,9 @@ Base URL: `http://localhost:8080/api/v1`
 |---|---|---|---|
 | `GET` | `/services` | Bearer JWT | cualquiera |
 | `POST` | `/services` | Bearer JWT | superadmin |
+| `GET` | `/services/:id` | Bearer JWT | cualquiera |
+| `PATCH` | `/services/:id` | Bearer JWT | superadmin |
+| `DELETE` | `/services/:id` | Bearer JWT | superadmin |
 
 #### `POST /services`
 
@@ -281,11 +383,14 @@ Base URL: `http://localhost:8080/api/v1`
 // Request
 {
   "name": "Billing",
-  "slug": "billing",
   "mfe_url": "https://cdn.tu-org.com/billing/remoteEntry.js",
-  "api_url": "https://api.tu-org.com/billing",
   "version": "1.0.0",
-  "description": "Módulo de facturación"
+  "description": "Módulo de facturación",
+  "config": {
+    "public": false,
+    "allowed_roles": ["admin", "superadmin"],
+    "auth_api_url": "https://auth.tu-org.com"
+  }
 }
 ```
 
@@ -298,9 +403,77 @@ Base URL: `http://localhost:8080/api/v1`
 | `GET` | `/health` | — |
 
 ```json
-// Response 200
 { "status": "ok" }
 ```
+
+---
+
+## Configuración: campos reconocidos y dónde ponerlos
+
+### `services.config` — defaults globales del servicio
+
+| Key | Tipo | Leída en | Efecto |
+|---|---|---|---|
+| `public` | `bool` | shell | Si `true`, monta el MFE sin JWT. Por defecto `false` |
+| `auth_api_url` | `string` | shell | URL del auth API inyectada al MFE como `authApiUrl` |
+| `allowed_roles` | `string[]` | shell | Roles que pueden montar este MFE (ej: `["admin","superadmin"]`). Si ausente, cualquier usuario autenticado tiene acceso |
+
+### `portal_services.config_override` — overrides por portal
+
+Acepta las mismas keys que `services.config`. Se aplica con un **shallow merge** (`services.config || config_override`) en `portal_repo.go · GetServices`: las keys de `config_override` sobreescriben las del servicio base.
+
+Ejemplo: un servicio es `public: false` globalmente pero se quiere público en un portal específico → poner `{"public": true}` en `config_override`.
+
+### `tenant_portals.config` — comportamiento del portal
+
+El objeto completo se expone al shell como `portal.config` desde `portal_handler.go · PublicConfig`.
+
+| Key | Tipo | Leída en | Efecto |
+|---|---|---|---|
+| `auth_api_url` | `string` | shell | Fallback de `authApiUrl` para servicios que no declaran el propio |
+| `login_slug` | `string` | shell | Slug del MFE que maneja el login (ej: `"login"`). **Si está ausente, el portal es público** — el shell no enforcea auth |
+
+### `tenants.config` — metadatos de marca del tenant
+
+| Key | Tipo | Leída en | Efecto |
+|---|---|---|---|
+| `logo_url` | `string` | `tenant_handler.go` → shell | Logo del tenant en la barra del shell |
+| `primary_color` | `string` | `tenant_handler.go` → shell | Color primario de la UI del shell |
+
+### Flujo de merge completo
+
+```
+services.config                   ← defaults globales
+        || (JSONB merge, Postgres)
+portal_services.config_override   ← overrides por portal
+        =
+PortalService.Config              ← lo que recibe el shell por servicio
+```
+
+### Reglas de diseño
+
+| Quiero... | Dónde va |
+|---|---|
+| Que algo aplique a todos los portales | `services.config` |
+| Override para un portal específico | `portal_services.config_override` |
+| Configurar auth o comportamiento del portal | `tenant_portals.config` |
+| Branding del tenant (logo, colores) | `tenants.config` |
+| Restringir un servicio a ciertos roles | `services.config["allowed_roles"]` o override en `portal_services` |
+| Portal sin login (totalmente público) | Omitir `login_slug` en `tenant_portals.config` |
+
+> `description` se conserva en `services` como metadato informativo; no viaja al shell.
+
+### `config_definitions` — registro de keys válidas
+
+La tabla `config_definitions` actúa como fuente de verdad de qué keys de configuración existen, en qué scope y qué tipo tienen. El storage sigue siendo JSONB — esta tabla es documentación viva a nivel DB y punto de validación antes de guardar un config.
+
+```sql
+SELECT key, scope, type, description, default_val
+FROM config_definitions
+ORDER BY scope, key;
+```
+
+Al agregar una nueva key de config: primero insertarla en `config_definitions`, luego usarla en el JSONB correspondiente.
 
 ---
 
@@ -309,7 +482,8 @@ Base URL: `http://localhost:8080/api/v1`
 | Header | Descripción |
 |---|---|
 | `Authorization: Bearer <token>` | JWT de acceso en rutas protegidas |
-| `X-Tenant-Slug: acme-corp` | Resolver tenant en llamadas server-to-server |
+| `X-Tenant-ID: <uuid>` | Resolver tenant en llamadas server-to-server (sin JWT) |
+| `X-Api-Key: <key>` | Autenticación para el endpoint público del shell |
 
 ---
 
@@ -344,16 +518,16 @@ core/
 │   ├── config/                  # Variables de entorno (viper)
 │   ├── db/                      # Pool PostgreSQL (pgx/v5)
 │   ├── cache/                   # Cliente Redis
-│   ├── domain/                  # Structs e interfaces (Tenant, Service, User)
-│   ├── repository/              # Queries SQL (tenant_repo, service_repo, user_repo)
+│   ├── domain/                  # Structs e interfaces (Tenant, Service, User, Portal)
+│   ├── repository/              # Queries SQL (tenant_repo, service_repo, user_repo, portal_repo)
 │   ├── service/                 # Lógica de negocio (tenant_service, service_svc)
-│   ├── handler/                 # Handlers HTTP (tenant_handler, service_handler)
-│   ├── middleware/              # JWT verify, tenant resolver, rate limiter, CORS, role
-│   └── seed/                    # Seed automático del superadmin al arranque
+│   ├── handler/                 # Handlers HTTP (tenant_handler, service_handler, portal_handler)
+│   ├── middleware/              # JWT verify, tenant resolver, rate limiter, CORS, role, api_key
+│   └── seed/                    # Seed idempotente al arranque
 ├── pkg/
 │   ├── jwt/                     # Solo Verify() — nunca Sign()
 │   └── response/                # Wrappers de respuesta HTTP (JSON, error, list)
-├── migrations/                  # 001–008 DDL con formato sql-migrate
+├── migrations/                  # DDL con formato sql-migrate
 │   ├── 001_create_plans.sql
 │   ├── 002_create_tenants.sql
 │   ├── 003_create_services.sql
@@ -361,7 +535,15 @@ core/
 │   ├── 005_create_users.sql
 │   ├── 006_create_refresh_tokens.sql
 │   ├── 007_create_audit_logs.sql
-│   └── 008_create_tenant_portals.sql  # tenant_portals + portal_services
+│   ├── 008_create_tenant_portals.sql       # tenant_portals + portal_services
+│   ├── 009_simplify_tenant.sql             # drop slug de tenants
+│   ├── 010_drop_tenant_services_config_override.sql
+│   ├── 011_drop_services_api_url.sql
+│   ├── 012_drop_tenant_portals_slug.sql
+│   ├── 013_add_users_portal_id.sql
+│   ├── 014_move_slug_to_tenant_services.sql  # slug = ruta de montaje por tenant
+│   ├── 015_create_roles.sql                  # tabla roles + role_id en users
+│   └── 016_create_config_definitions.sql     # registro de keys de config por scope
 ├── docker-compose.yml
 ├── Dockerfile
 └── .env.example

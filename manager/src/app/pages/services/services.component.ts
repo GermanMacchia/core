@@ -1,174 +1,133 @@
 import { Component, inject, signal, OnInit } from '@angular/core'
-import { FormsModule } from '@angular/forms'
+import { FormBuilder, Validators } from '@angular/forms'
+import {
+	CompactList,
+	Form,
+	ToastService,
+	InfoModalService,
+} from '@germanmacchia/angular-ui'
+import type { CompactListColumn, CompactListAction, FormField } from '@germanmacchia/angular-ui'
 import { AdminService } from '../../core/services/admin.service'
 import { Service } from '../../core/models/tenant.model'
 
 @Component({
 	selector: 'app-services',
 	standalone: true,
-	imports: [FormsModule],
+	imports: [CompactList, Form],
 	template: `
 		<div class="p-6 lg:p-10 max-w-6xl">
 			<div class="flex items-center justify-between mb-6">
 				<div>
 					<h1 class="text-2xl font-bold text-base-content">Catálogo de servicios</h1>
-					<p class="text-base-content/50 text-sm">{{ services().length }} servicios</p>
+					<p class="text-base-content/50 text-sm">{{ services().length }} servicios registrados</p>
 				</div>
-				<button class="btn btn-primary btn-sm" onclick="modal_create_svc.showModal()">
-					+ Nuevo servicio
+				<button class="btn btn-primary btn-sm" (click)="showCreate.set(true)">
+					<i class="bi bi-plus-lg"></i> Nuevo servicio
 				</button>
 			</div>
 
-			@if (error()) {
-				<div class="alert alert-error mb-4 text-sm">{{ error() }}</div>
-			}
-
-			<div class="card bg-base-100 shadow-sm border border-base-300">
-				<div class="overflow-x-auto">
-					<table class="table table-sm">
-						<thead>
-							<tr class="text-xs text-base-content/50 uppercase">
-								<th>Nombre</th>
-								<th>Slug</th>
-								<th>Versión</th>
-								<th>MFE URL</th>
-								<th>API URL</th>
-								<th class="text-center">Activo</th>
-							</tr>
-						</thead>
-						<tbody>
-							@if (loading()) {
-								<tr>
-									<td colspan="6" class="text-center py-8">
-										<span class="loading loading-spinner loading-sm"></span>
-									</td>
-								</tr>
-							} @else if (services().length === 0) {
-								<tr>
-									<td colspan="6" class="text-center py-8 text-base-content/40 text-sm">
-										Sin servicios en el catálogo
-									</td>
-								</tr>
-							} @else {
-								@for (s of services(); track s.id) {
-									<tr class="hover">
-										<td>
-											<div class="font-medium text-sm">{{ s.name }}</div>
-											@if (s.description) {
-												<div class="text-xs text-base-content/40">{{ s.description }}</div>
-											}
-										</td>
-										<td class="font-mono text-xs">{{ s.slug }}</td>
-										<td class="text-xs">{{ s.version }}</td>
-										<td class="text-xs text-base-content/60 max-w-[200px] truncate">
-											{{ s.mfe_url }}
-										</td>
-										<td class="text-xs text-base-content/60 max-w-[160px] truncate">
-											{{ s.api_url ?? '—' }}
-										</td>
-										<td class="text-center">
-											@if (s.is_active) {
-												<span class="badge badge-sm badge-success">Sí</span>
-											} @else {
-												<span class="badge badge-sm badge-ghost">No</span>
-											}
-										</td>
-									</tr>
-								}
-							}
-						</tbody>
-					</table>
-				</div>
-			</div>
+			<lib-compact-list
+				[items]="services()"
+				[columns]="columns"
+				[actions]="actions"
+				[loading]="loading()"
+				[emptyIcon]="'bi bi-grid'"
+				[emptyMessage]="'Sin servicios en el catálogo'"
+				[pageSize]="20"
+				[trackByKey]="'id'"
+				[booleanTrueLabel]="'Activo'"
+				[booleanFalseLabel]="'Inactivo'"
+				(actionClick)="onAction($event)" />
 		</div>
 
-		<!-- Create Service Modal -->
-		<dialog id="modal_create_svc" class="modal">
-			<div class="modal-box w-full max-w-md">
-				<h3 class="font-bold text-lg mb-4">Nuevo servicio</h3>
+		<lib-form
+			[formGroup]="createForm"
+			[fields]="createFields"
+			[displayMode]="'modal'"
+			[title]="'Nuevo servicio'"
+			[isOpen]="showCreate()"
+			(submitEvent)="onCreate()"
+			(cancelEvent)="showCreate.set(false)" />
 
-				@if (createError()) {
-					<div class="alert alert-error mb-3 text-sm py-2">{{ createError() }}</div>
-				}
-
-				<div class="flex flex-col gap-3">
-					<label class="form-control">
-						<span class="label label-text text-xs">Nombre *</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.name"
-							placeholder="Mi Servicio" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs"
-							>Slug * <span class="text-base-content/40">(único)</span></span
-						>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.slug"
-							placeholder="mi-servicio" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs">Versión *</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.version"
-							placeholder="1.0.0" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs">MFE URL *</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.mfe_url"
-							placeholder="http://localhost:4200/remoteEntry.js" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs">API URL</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.api_url"
-							placeholder="http://localhost:3000" />
-					</label>
-					<label class="form-control">
-						<span class="label label-text text-xs">Descripción</span>
-						<input
-							type="text"
-							class="input input-bordered input-sm"
-							[(ngModel)]="form.description" />
-					</label>
-				</div>
-
-				<div class="modal-action">
-					<form method="dialog">
-						<button class="btn btn-ghost btn-sm" (click)="resetForm()">Cancelar</button>
-					</form>
-					<button class="btn btn-primary btn-sm" [disabled]="creating()" (click)="create()">
-						@if (creating()) {
-							<span class="loading loading-spinner loading-xs"></span>
-						}
-						Crear
-					</button>
-				</div>
-			</div>
-			<form method="dialog" class="modal-backdrop"><button>close</button></form>
-		</dialog>
+		<lib-form
+			[formGroup]="editForm"
+			[fields]="editFields"
+			[displayMode]="'modal'"
+			[title]="'Editar servicio'"
+			[isOpen]="showEdit()"
+			(submitEvent)="onUpdate()"
+			(cancelEvent)="showEdit.set(false)" />
 	`,
 })
 export class ServicesComponent implements OnInit {
 	private admin = inject(AdminService)
+	private fb = inject(FormBuilder)
+	private toast = inject(ToastService)
+	private infoModal = inject(InfoModalService)
 
 	services = signal<Service[]>([])
 	loading = signal(true)
-	error = signal<string | null>(null)
-	creating = signal(false)
-	createError = signal<string | null>(null)
+	showCreate = signal(false)
+	showEdit = signal(false)
+	private editTarget: Service | null = null
 
-	form = { name: '', slug: '', version: '', mfe_url: '', api_url: '', description: '' }
+	createForm = this.fb.group({
+		name: ['', Validators.required],
+		slug: ['', Validators.required],
+		version: ['1.0.0', Validators.required],
+		mfe_url: ['', Validators.required],
+		api_url: [''],
+		description: [''],
+	})
+
+	editForm = this.fb.group({
+		name: [''],
+		version: [''],
+		mfe_url: [''],
+		api_url: [''],
+		description: [''],
+		is_active: [true],
+	})
+
+	createFields: FormField[] = [
+		{ name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Mi Servicio' },
+		{ name: 'slug', label: 'Slug', type: 'text', required: true, placeholder: 'mi-servicio' },
+		{ name: 'version', label: 'Versión', type: 'text', required: true, placeholder: '1.0.0' },
+		{ name: 'mfe_url', label: 'MFE URL', type: 'text', required: true, placeholder: 'http://localhost:4200/remoteEntry.js' },
+		{ name: 'api_url', label: 'API URL', type: 'text', placeholder: 'http://localhost:3000' },
+		{ name: 'description', label: 'Descripción', type: 'textarea' },
+	]
+
+	editFields: FormField[] = [
+		{ name: 'name', label: 'Nombre', type: 'text', placeholder: 'Mi Servicio' },
+		{ name: 'version', label: 'Versión', type: 'text', placeholder: '1.0.0' },
+		{ name: 'mfe_url', label: 'MFE URL', type: 'text', placeholder: 'http://localhost:4200/remoteEntry.js' },
+		{ name: 'api_url', label: 'API URL', type: 'text', placeholder: 'http://localhost:3000' },
+		{ name: 'description', label: 'Descripción', type: 'textarea' },
+		{
+			name: 'is_active',
+			label: 'Estado',
+			type: 'select',
+			options: [
+				{ label: 'Activo', value: true },
+				{ label: 'Inactivo', value: false },
+			],
+		},
+	]
+
+	columns: CompactListColumn<Service>[] = [
+		{ key: 'name', header: 'Nombre', type: 'text' },
+		{ key: 'slug', header: 'Slug', type: 'text' },
+		{ key: 'version', header: 'Versión', type: 'text' },
+		{ key: 'mfe_url', header: 'MFE URL', type: 'text' },
+		{ key: 'api_url', header: 'API URL', type: 'text', transform: s => s.api_url ?? '—' },
+		{ key: 'is_active', header: 'Activo', type: 'boolean' },
+	]
+
+	actions: CompactListAction<Service>[] = [
+		{ id: 'edit', icon: 'bi bi-pencil', tooltip: 'Editar' },
+		{ id: 'delete', icon: 'bi bi-trash', tooltip: 'Eliminar', class: 'text-error' },
+	]
 
 	ngOnInit() {
 		this.load()
@@ -182,52 +141,90 @@ export class ServicesComponent implements OnInit {
 				this.loading.set(false)
 			},
 			error: () => {
-				this.error.set('Error al cargar los servicios.')
+				this.toast.toast({ severity: 'error', body: 'Error al cargar los servicios.' })
 				this.loading.set(false)
 			},
 		})
 	}
 
-	create() {
-		if (!this.form.name || !this.form.slug || !this.form.version || !this.form.mfe_url) {
-			this.createError.set('Nombre, slug, versión y MFE URL son requeridos.')
+	onAction(event: { action: string; item: Service }) {
+		if (event.action === 'edit') {
+			this.editTarget = event.item
+			this.editForm.patchValue({
+				name: event.item.name,
+				version: event.item.version,
+				mfe_url: event.item.mfe_url,
+				api_url: event.item.api_url ?? '',
+				description: (event.item as any).description ?? '',
+				is_active: event.item.is_active,
+			})
+			this.showEdit.set(true)
+		} else if (event.action === 'delete') {
+			this.infoModal.openAsConfirm(
+				() => this.doDelete(event.item),
+				`¿Eliminar el servicio "${event.item.name}"?`,
+			)
+		}
+	}
+
+	onCreate() {
+		if (this.createForm.invalid) {
+			this.toast.toast({ severity: 'warning', body: 'Completá los campos requeridos.' })
 			return
 		}
-		this.creating.set(true)
-		this.createError.set(null)
-
+		const v = this.createForm.getRawValue()
 		const body: {
-			name: string
-			slug: string
-			version: string
-			mfe_url: string
-			api_url?: string
-			description?: string
-		} = {
-			name: this.form.name,
-			slug: this.form.slug,
-			version: this.form.version,
-			mfe_url: this.form.mfe_url,
-		}
-		if (this.form.api_url) body.api_url = this.form.api_url
-		if (this.form.description) body.description = this.form.description
+			name: string; slug: string; version: string; mfe_url: string; api_url?: string; description?: string
+		} = { name: v.name!, slug: v.slug!, version: v.version!, mfe_url: v.mfe_url! }
+		if (v.api_url) body.api_url = v.api_url
+		if (v.description) body.description = v.description
 
 		this.admin.createService(body).subscribe({
 			next: res => {
 				this.services.update(list => [res.data, ...list])
-				this.creating.set(false)
-				this.resetForm()
-				;(document.getElementById('modal_create_svc') as HTMLDialogElement).close()
+				this.showCreate.set(false)
+				this.createForm.reset({ version: '1.0.0' })
+				this.toast.toast({ severity: 'success', body: `Servicio "${res.data.name}" creado.` })
 			},
 			error: err => {
-				this.createError.set(err.error?.error ?? 'Error al crear el servicio.')
-				this.creating.set(false)
+				this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al crear el servicio.' })
 			},
 		})
 	}
 
-	resetForm() {
-		this.form = { name: '', slug: '', version: '', mfe_url: '', api_url: '', description: '' }
-		this.createError.set(null)
+	onUpdate() {
+		if (!this.editTarget) return
+		const v = this.editForm.getRawValue()
+		const body: { name?: string; version?: string; mfe_url?: string; api_url?: string; description?: string; is_active?: boolean } = {}
+		if (v.name) body.name = v.name
+		if (v.version) body.version = v.version
+		if (v.mfe_url) body.mfe_url = v.mfe_url
+		if (v.api_url !== null) body.api_url = v.api_url ?? undefined
+		if (v.description !== null) body.description = v.description ?? undefined
+		if (v.is_active !== null) body.is_active = v.is_active!
+
+		this.admin.updateService(this.editTarget.id, body).subscribe({
+			next: res => {
+				this.services.update(list => list.map(s => s.id === res.data.id ? res.data : s))
+				this.showEdit.set(false)
+				this.editTarget = null
+				this.toast.toast({ severity: 'success', body: `Servicio "${res.data.name}" actualizado.` })
+			},
+			error: err => {
+				this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al actualizar el servicio.' })
+			},
+		})
+	}
+
+	private doDelete(svc: Service) {
+		this.admin.deleteService(svc.id).subscribe({
+			next: () => {
+				this.services.update(list => list.filter(s => s.id !== svc.id))
+				this.toast.toast({ severity: 'success', body: `Servicio "${svc.name}" eliminado.` })
+			},
+			error: () => {
+				this.toast.toast({ severity: 'error', body: 'Error al eliminar el servicio.' })
+			},
+		})
 	}
 }

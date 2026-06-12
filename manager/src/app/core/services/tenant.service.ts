@@ -18,11 +18,13 @@ export class TenantService {
 
 	loadConfig(): Promise<void> {
 		const slug = this.slugFromHostname()
-		const headers = slug ? new HttpHeaders({ 'X-Tenant-Slug': slug }) : undefined
+		if (!slug) return Promise.resolve()
 
 		return new Promise(resolve => {
 			this.http
-				.get<{ data: TenantConfig }>(`${CORE_API}/api/v1/public/config`, { headers })
+				.get<{ data: TenantConfig }>(`${CORE_API}/api/v1/public/config`, {
+					headers: new HttpHeaders({ 'X-Tenant-Slug': slug }),
+				})
 				.subscribe({
 					next: res => {
 						this.config.set(res.data)

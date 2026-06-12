@@ -1,27 +1,19 @@
-import {
-	ApplicationConfig,
-	APP_INITIALIZER,
-	provideBrowserGlobalErrorListeners,
-} from '@angular/core'
+import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core'
 import { provideRouter, withComponentInputBinding } from '@angular/router'
-import { provideHttpClient } from '@angular/common/http'
+import { provideHttpClient, withInterceptors } from '@angular/common/http'
+import { provideUiKit, ToastService, InfoModalService, ConfirmService, FilterService } from '@germanmacchia/angular-ui'
 import { routes } from './app.routes'
-import { TenantService } from './core/services/tenant.service'
-
-function initTenant(tenant: TenantService) {
-	return () => tenant.loadConfig()
-}
+import { authInterceptor } from './core/interceptors/auth.interceptor'
 
 export const appConfig: ApplicationConfig = {
 	providers: [
 		provideBrowserGlobalErrorListeners(),
 		provideRouter(routes, withComponentInputBinding()),
-		provideHttpClient(),
-		{
-			provide: APP_INITIALIZER,
-			useFactory: initTenant,
-			deps: [TenantService],
-			multi: true,
-		},
+		provideHttpClient(withInterceptors([authInterceptor])),
+		provideUiKit({ injectStyles: false }),
+		ToastService,
+		InfoModalService,
+		ConfirmService,
+		FilterService,
 	],
 }

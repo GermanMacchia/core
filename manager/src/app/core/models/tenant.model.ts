@@ -14,6 +14,7 @@ export interface TenantMeta {
 export interface TenantConfig {
 	tenant: TenantMeta
 	auth_mfe_url: string
+	auth_api_url?: string
 	mfes: MfeEntry[]
 }
 

@@ -77,10 +77,12 @@ Content-Type: application/json
 **Qué hace internamente:**
 1. Busca el usuario por email (scope de tenant o global según el contexto).
 2. Verifica la contraseña con `bcrypt`.
-3. Genera un JWT firmado con `HS256` usando `JWT_SECRET`.
-4. Genera 32 bytes criptográficamente aleatorios como refresh token.
-5. Persiste en BD el **hash SHA-256** del refresh token (nunca el token en claro) junto a `user_agent` e `ip_address`.
-6. Actualiza `last_login_at` del usuario.
+3. Consulta los servicios habilitados para el tenant del usuario y los incluye en el claim `services` del JWT. Los usuarios con rol `superadmin` reciben `services: null` (acceso irrestricto).
+4. Genera un JWT firmado con `HS256` usando `JWT_SECRET`.
+5. Genera 32 bytes criptográficamente aleatorios como refresh token.
+6. Persiste en BD el **hash SHA-256** del refresh token (nunca el token en claro) junto a `user_agent` e `ip_address`.
+7. Actualiza `last_login_at` del usuario.
+8. Escribe un registro `auth.login` en la tabla `audit_logs` (fire-and-forget, no bloquea la respuesta).
 
 ---
 
@@ -112,8 +114,9 @@ Content-Type: application/json
 2. Busca el registro en BD por hash.
 3. Valida que no esté revocado (`revoked_at IS NULL`) y que no haya expirado.
 4. **Rotación obligatoria:** revoca el refresh token actual e inmediatamente emite uno nuevo.
-5. Genera un nuevo access token JWT.
-6. Persiste el nuevo refresh token (hasheado) con el `user_agent` e `ip` actuales.
+5. Consulta los servicios habilitados para el tenant del usuario e incluye el claim `services` actualizado en el nuevo JWT (igual que en login). Los `superadmin` reciben `services: null`.
+6. Genera un nuevo access token JWT.
+7. Persiste el nuevo refresh token (hasheado) con el `user_agent` e `ip` actuales.
 
 > **Importante para el cliente:** tras cada `/auth/refresh`, el refresh token anterior queda inválido. El cliente **debe reemplazar** el token almacenado con el nuevo recibido en la respuesta.
 
@@ -137,7 +140,9 @@ Content-Type: application/json
 ```
 
 **Qué hace internamente:**
-- Marca el refresh token como revocado en BD (`revoked_at = NOW()`).
+1. Busca el refresh token en BD por su hash SHA-256 para obtener el `user_id` asociado.
+2. Marca el token como revocado (`revoked_at = NOW()`).
+3. Escribe un registro `auth.logout` en la tabla `audit_logs` (fire-and-forget).
 - El access token asociado **sigue siendo válido** hasta su expiración natural (máximo 15 minutos). Diseño aceptado: la ventana de riesgo es mínima dado el TTL corto.
 
 ---
@@ -203,9 +208,39 @@ Si la base de datos es comprometida, los hashes son inútiles sin el token origi
 
 ## Rate Limiting
 
-El servicio aplica rate limiting a nivel de IP por ruta: **60 requests por minuto**. Se implementa con un contador en Redis. Las respuestas con exceso reciben `429 Too Many Requests`.
+El servicio aplica rate limiting a nivel de IP usando contadores en Redis. Las respuestas con exceso reciben `429 Too Many Requests`.
 
-Aplica a todos los endpoints `/auth/*`.
+| Endpoint | Límite | Clave Redis |
+|---|---|---|
+| `POST /auth/login` | **10 req/min** (estricto) | `auth:login:strict:{ip}` |
+| Todos los demás `/auth/*` | **60 req/min** (global) | `auth:global:{ip}` |
+
+El límite estricto de login está diseñado para frenar ataques de fuerza bruta sin afectar el uso normal (un usuario raramente intenta más de 1–2 logins por minuto).
+
+---
+
+## Registro de auditoría
+
+Cada login y logout exitoso genera un registro en la tabla `audit_logs` de PostgreSQL. El registro es **fire-and-forget**: se escribe en una goroutine y nunca bloquea la respuesta al cliente.
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | bigserial | Identificador autoincremental |
+| `tenant_id` | uuid | Tenant del usuario autenticado |
+| `user_id` | uuid | Usuario que realizó la acción |
+| `action` | text | `auth.login` o `auth.logout` |
+| `ip_address` | inet | IP del cliente (vacío → `NULL`) |
+| `created_at` | timestamptz | Momento del evento (default `NOW()`) |
+
+Ejemplo de consulta para ver los últimos eventos de un tenant:
+
+```sql
+SELECT user_id, action, ip_address, created_at
+FROM audit_logs
+WHERE tenant_id = '<uuid>'
+ORDER BY created_at DESC
+LIMIT 50;
+```
 
 ---
 

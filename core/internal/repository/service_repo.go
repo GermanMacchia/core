@@ -20,11 +20,11 @@ func NewServiceRepo(db *pgxpool.Pool) *ServiceRepo {
 func (r *ServiceRepo) Create(ctx context.Context, input domain.CreateServiceInput) (*domain.Service, error) {
 	var s domain.Service
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO services (name, slug, mfe_url, api_url, version, description, config)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, name, slug, mfe_url, api_url, version, description, config, is_active, created_at, updated_at
-	`, input.Name, input.Slug, input.MFEURL, input.APIURL, input.Version, input.Description, input.Config).
-		Scan(&s.ID, &s.Name, &s.Slug, &s.MFEURL, &s.APIURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+		INSERT INTO services (name, mfe_url, version, description, config)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, mfe_url, version, description, config, is_active, created_at, updated_at
+	`, input.Name, input.MFEURL, input.Version, input.Description, input.Config).
+		Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create service: %w", err)
 	}
@@ -34,29 +34,17 @@ func (r *ServiceRepo) Create(ctx context.Context, input domain.CreateServiceInpu
 func (r *ServiceRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Service, error) {
 	var s domain.Service
 	err := r.db.QueryRow(ctx, `
-		SELECT id, name, slug, mfe_url, api_url, version, description, config, is_active, created_at, updated_at
+		SELECT id, name, mfe_url, version, description, config, is_active, created_at, updated_at
 		FROM services WHERE id = $1
-	`, id).Scan(&s.ID, &s.Name, &s.Slug, &s.MFEURL, &s.APIURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+	`, id).Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get service by id: %w", err)
 	}
 	return &s, nil
 }
 
-func (r *ServiceRepo) GetBySlug(ctx context.Context, slug string) (*domain.Service, error) {
-	var s domain.Service
-	err := r.db.QueryRow(ctx, `
-		SELECT id, name, slug, mfe_url, api_url, version, description, config, is_active, created_at, updated_at
-		FROM services WHERE slug = $1
-	`, slug).Scan(&s.ID, &s.Name, &s.Slug, &s.MFEURL, &s.APIURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("get service by slug: %w", err)
-	}
-	return &s, nil
-}
-
 func (r *ServiceRepo) List(ctx context.Context, onlyActive bool) ([]*domain.Service, error) {
-	q := `SELECT id, name, slug, mfe_url, api_url, version, description, config, is_active, created_at, updated_at FROM services`
+	q := `SELECT id, name, mfe_url, version, description, config, is_active, created_at, updated_at FROM services`
 	if onlyActive {
 		q += ` WHERE is_active = TRUE`
 	}
@@ -71,7 +59,7 @@ func (r *ServiceRepo) List(ctx context.Context, onlyActive bool) ([]*domain.Serv
 	var services []*domain.Service
 	for rows.Next() {
 		var s domain.Service
-		if err := rows.Scan(&s.ID, &s.Name, &s.Slug, &s.MFEURL, &s.APIURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
 		}
 		services = append(services, &s)
@@ -79,19 +67,44 @@ func (r *ServiceRepo) List(ctx context.Context, onlyActive bool) ([]*domain.Serv
 	return services, rows.Err()
 }
 
+func (r *ServiceRepo) Update(ctx context.Context, id uuid.UUID, input domain.UpdateServiceInput) (*domain.Service, error) {
+	var s domain.Service
+	err := r.db.QueryRow(ctx, `
+		UPDATE services SET
+			name        = COALESCE($2, name),
+			mfe_url     = COALESCE($3, mfe_url),
+			version     = COALESCE($4, version),
+			description = COALESCE($5, description),
+			is_active   = COALESCE($6, is_active),
+			updated_at  = NOW()
+		WHERE id = $1
+		RETURNING id, name, mfe_url, version, description, config, is_active, created_at, updated_at
+	`, id, input.Name, input.MFEURL, input.Version, input.Description, input.IsActive).
+		Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("update service: %w", err)
+	}
+	return &s, nil
+}
+
+func (r *ServiceRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE services SET is_active = FALSE, updated_at = NOW() WHERE id = $1`, id)
+	return err
+}
+
 func (r *ServiceRepo) EnableForTenant(ctx context.Context, input domain.EnableServiceInput) (*domain.TenantService, error) {
 	var ts domain.TenantService
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO tenant_services (tenant_id, service_id, config_override, expires_at)
+		INSERT INTO tenant_services (tenant_id, service_id, slug, expires_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (tenant_id, service_id) DO UPDATE SET
+			slug       = EXCLUDED.slug,
 			is_enabled = TRUE,
-			config_override = EXCLUDED.config_override,
 			expires_at = EXCLUDED.expires_at,
 			enabled_at = NOW()
-		RETURNING id, tenant_id, service_id, is_enabled, config_override, enabled_at, expires_at
-	`, input.TenantID, input.ServiceID, input.ConfigOverride, input.ExpiresAt).
-		Scan(&ts.ID, &ts.TenantID, &ts.ServiceID, &ts.IsEnabled, &ts.ConfigOverride, &ts.EnabledAt, &ts.ExpiresAt)
+		RETURNING id, tenant_id, service_id, slug, is_enabled, enabled_at, expires_at
+	`, input.TenantID, input.ServiceID, input.Slug, input.ExpiresAt).
+		Scan(&ts.ID, &ts.TenantID, &ts.ServiceID, &ts.Slug, &ts.IsEnabled, &ts.EnabledAt, &ts.ExpiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("enable service for tenant: %w", err)
 	}
@@ -108,12 +121,12 @@ func (r *ServiceRepo) DisableForTenant(ctx context.Context, tenantID, serviceID 
 
 func (r *ServiceRepo) GetTenantServices(ctx context.Context, tenantID uuid.UUID) ([]*domain.TenantService, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT ts.id, ts.tenant_id, ts.service_id, ts.is_enabled, ts.config_override, ts.enabled_at, ts.expires_at,
-		       s.id, s.name, s.slug, s.mfe_url, s.api_url, s.version, s.description, s.config, s.is_active, s.created_at, s.updated_at
+		SELECT ts.id, ts.tenant_id, ts.service_id, ts.slug, ts.is_enabled, ts.enabled_at, ts.expires_at,
+		       s.id, s.name, s.mfe_url, s.version, s.description, s.config, s.is_active, s.created_at, s.updated_at
 		FROM tenant_services ts
 		JOIN services s ON s.id = ts.service_id
 		WHERE ts.tenant_id = $1 AND ts.is_enabled = TRUE AND s.is_active = TRUE
-		ORDER BY s.name
+		ORDER BY ts.slug
 	`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get tenant services: %w", err)
@@ -125,8 +138,8 @@ func (r *ServiceRepo) GetTenantServices(ctx context.Context, tenantID uuid.UUID)
 		var ts domain.TenantService
 		var s domain.Service
 		if err := rows.Scan(
-			&ts.ID, &ts.TenantID, &ts.ServiceID, &ts.IsEnabled, &ts.ConfigOverride, &ts.EnabledAt, &ts.ExpiresAt,
-			&s.ID, &s.Name, &s.Slug, &s.MFEURL, &s.APIURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
+			&ts.ID, &ts.TenantID, &ts.ServiceID, &ts.Slug, &ts.IsEnabled, &ts.EnabledAt, &ts.ExpiresAt,
+			&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
