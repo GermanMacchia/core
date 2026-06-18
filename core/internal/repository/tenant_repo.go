@@ -36,13 +36,13 @@ func (r *TenantRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant,
 	var plan domain.Plan
 	err := r.db.QueryRow(ctx, `
 		SELECT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
-		       p.id, p.name, p.max_users, p.max_services, p.price_usd, p.features, p.created_at
+		       p.id, p.name, p.max_users, p.max_services, p.price, p.features, p.created_at
 		FROM tenants t
 		JOIN plans p ON p.id = t.plan_id
 		WHERE t.id = $1
 	`, id).Scan(
 		&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
-		&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.PriceUSD, &plan.Features, &plan.CreatedAt,
+		&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.Price, &plan.Features, &plan.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get tenant by id: %w", err)
@@ -56,13 +56,13 @@ func (r *TenantRepo) GetByDomain(ctx context.Context, domain_ string) (*domain.T
 	var plan domain.Plan
 	err := r.db.QueryRow(ctx, `
 		SELECT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
-		       p.id, p.name, p.max_users, p.max_services, p.price_usd, p.features, p.created_at
+		       p.id, p.name, p.max_users, p.max_services, p.price, p.features, p.created_at
 		FROM tenants t
 		JOIN plans p ON p.id = t.plan_id
 		WHERE t.domain = $1
 	`, domain_).Scan(
 		&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
-		&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.PriceUSD, &plan.Features, &plan.CreatedAt,
+		&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.Price, &plan.Features, &plan.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get tenant by domain: %w", err)
@@ -74,7 +74,7 @@ func (r *TenantRepo) GetByDomain(ctx context.Context, domain_ string) (*domain.T
 func (r *TenantRepo) List(ctx context.Context, limit, offset int) ([]*domain.Tenant, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
-		       p.id, p.name, p.max_users, p.max_services, p.price_usd, p.features, p.created_at
+		       p.id, p.name, p.max_users, p.max_services, p.price, p.features, p.created_at
 		FROM tenants t
 		JOIN plans p ON p.id = t.plan_id
 		ORDER BY t.created_at DESC
@@ -91,7 +91,7 @@ func (r *TenantRepo) List(ctx context.Context, limit, offset int) ([]*domain.Ten
 		var plan domain.Plan
 		if err := rows.Scan(
 			&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
-			&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.PriceUSD, &plan.Features, &plan.CreatedAt,
+			&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.Price, &plan.Features, &plan.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

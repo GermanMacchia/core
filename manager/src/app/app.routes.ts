@@ -42,6 +42,18 @@ export const routes: Routes = [
 				loadComponent: () =>
 					import('./pages/services/services.component').then(m => m.ServicesComponent),
 			},
+			{
+				path: 'plans',
+				canActivate: [superAdminGuard],
+				loadComponent: () =>
+					import('./pages/plans/plans.component').then(m => m.PlansComponent),
+			},
+			{
+				path: 'plans/:id',
+				canActivate: [superAdminGuard],
+				loadComponent: () =>
+					import('./pages/plan-detail/plan-detail.component').then(m => m.PlanDetailComponent),
+			},
 		],
 	},
 	{ path: '**', redirectTo: '' },

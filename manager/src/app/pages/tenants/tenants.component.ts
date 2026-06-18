@@ -9,7 +9,7 @@ import {
 	InfoModalService,
 	ToastService,
 } from '@germanmacchia/angular-ui'
-import { Tenant } from '../../core/models/tenant.model'
+import { Plan, Tenant } from '../../core/models/tenant.model'
 import { AdminService } from '../../core/services/admin.service'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -56,7 +56,7 @@ const STATUS_BADGE: Record<string, string> = {
 
 		<lib-form
 			[formGroup]="createForm"
-			[fields]="createFields"
+			[fields]="createFields()"
 			[displayMode]="'modal'"
 			[title]="'Nuevo tenant'"
 			[isOpen]="showCreate()"
@@ -74,30 +74,22 @@ export class TenantsComponent implements OnInit {
 	tenants = signal<Tenant[]>([])
 	loading = signal(true)
 	showCreate = signal(false)
+	plans = signal<Plan[]>([])
 
 	createForm = this.fb.group({
 		name: ['', Validators.required],
-		slug: ['', Validators.required],
 		domain: [''],
 		plan_id: ['', Validators.required],
 	})
 
-	createFields: FormField[] = [
+	createFields = signal<FormField[]>([
 		{ name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Acme Corp' },
-		{ name: 'slug', label: 'Slug', type: 'text', required: true, placeholder: 'acme' },
 		{ name: 'domain', label: 'Dominio', type: 'text', placeholder: 'acme.example.com' },
-		{
-			name: 'plan_id',
-			label: 'Plan ID',
-			type: 'text',
-			required: true,
-			placeholder: 'UUID del plan',
-		},
-	]
+		{ name: 'plan_id', label: 'Plan', type: 'select', required: true, options: [] },
+	])
 
 	columns: CompactListColumn<Tenant>[] = [
-		{ key: 'name', header: 'Nombre', type: 'text' },
-		{ key: 'slug', header: 'Slug', type: 'text' },
+		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
 		{ key: 'domain', header: 'Dominio', type: 'text', transform: t => t.domain ?? '—' },
 		{ key: 'plan', header: 'Plan', type: 'text', transform: t => t.plan?.name ?? '—' },
 		{ key: 'status', header: 'Estado', type: 'custom' },
@@ -110,7 +102,29 @@ export class TenantsComponent implements OnInit {
 	]
 
 	ngOnInit() {
+		this.loadPlans()
 		this.load()
+	}
+
+	loadPlans() {
+		this.admin.listPlans().subscribe({
+			next: res => {
+				this.plans.set(res.data ?? [])
+				this.createFields.update(fields =>
+					fields.map(f =>
+						f.name === 'plan_id'
+							? {
+									...f,
+									options: (res.data ?? []).map(p => ({
+										label: `${p.name} ($${p.price})`,
+										value: p.id,
+									})),
+								}
+							: f,
+					),
+				)
+			},
+		})
 	}
 
 	load() {
@@ -144,8 +158,7 @@ export class TenantsComponent implements OnInit {
 			return
 		}
 		const v = this.createForm.getRawValue()
-		const body: { slug: string; name: string; plan_id: string; domain?: string } = {
-			slug: v.slug!,
+		const body: { name: string; plan_id: string; domain?: string } = {
 			name: v.name!,
 			plan_id: v.plan_id!,
 		}

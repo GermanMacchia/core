@@ -44,6 +44,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusUnauthorized, "invalid credentials")
 		case service.ErrUserInactive:
 			response.Error(w, http.StatusForbidden, "user is inactive")
+		case service.ErrTenantSuspended:
+			response.Error(w, http.StatusForbidden, "tenant is suspended or cancelled")
 		default:
 			response.InternalError(w)
 		}
@@ -67,6 +69,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		switch err {
 		case service.ErrTokenExpired, service.ErrTokenRevoked:
 			response.Error(w, http.StatusUnauthorized, err.Error())
+		case service.ErrTenantSuspended:
+			response.Error(w, http.StatusForbidden, "tenant is suspended or cancelled")
 		default:
 			response.InternalError(w)
 		}

@@ -9,6 +9,9 @@ import (
 	"github.com/tu-org/tenant-core/internal/domain"
 )
 
+// Compile-time check that ServiceRepo satisfies the domain interface.
+var _ domain.ServiceRepository = (*ServiceRepo)(nil)
+
 type ServiceRepo struct {
 	db *pgxpool.Pool
 }
@@ -92,59 +95,3 @@ func (r *ServiceRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (r *ServiceRepo) EnableForTenant(ctx context.Context, input domain.EnableServiceInput) (*domain.TenantService, error) {
-	var ts domain.TenantService
-	err := r.db.QueryRow(ctx, `
-		INSERT INTO tenant_services (tenant_id, service_id, slug, expires_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (tenant_id, service_id) DO UPDATE SET
-			slug       = EXCLUDED.slug,
-			is_enabled = TRUE,
-			expires_at = EXCLUDED.expires_at,
-			enabled_at = NOW()
-		RETURNING id, tenant_id, service_id, slug, is_enabled, enabled_at, expires_at
-	`, input.TenantID, input.ServiceID, input.Slug, input.ExpiresAt).
-		Scan(&ts.ID, &ts.TenantID, &ts.ServiceID, &ts.Slug, &ts.IsEnabled, &ts.EnabledAt, &ts.ExpiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("enable service for tenant: %w", err)
-	}
-	return &ts, nil
-}
-
-func (r *ServiceRepo) DisableForTenant(ctx context.Context, tenantID, serviceID uuid.UUID) error {
-	_, err := r.db.Exec(ctx,
-		`UPDATE tenant_services SET is_enabled = FALSE WHERE tenant_id = $1 AND service_id = $2`,
-		tenantID, serviceID,
-	)
-	return err
-}
-
-func (r *ServiceRepo) GetTenantServices(ctx context.Context, tenantID uuid.UUID) ([]*domain.TenantService, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT ts.id, ts.tenant_id, ts.service_id, ts.slug, ts.is_enabled, ts.enabled_at, ts.expires_at,
-		       s.id, s.name, s.mfe_url, s.version, s.description, s.config, s.is_active, s.created_at, s.updated_at
-		FROM tenant_services ts
-		JOIN services s ON s.id = ts.service_id
-		WHERE ts.tenant_id = $1 AND ts.is_enabled = TRUE AND s.is_active = TRUE
-		ORDER BY ts.slug
-	`, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("get tenant services: %w", err)
-	}
-	defer rows.Close()
-
-	var result []*domain.TenantService
-	for rows.Next() {
-		var ts domain.TenantService
-		var s domain.Service
-		if err := rows.Scan(
-			&ts.ID, &ts.TenantID, &ts.ServiceID, &ts.Slug, &ts.IsEnabled, &ts.EnabledAt, &ts.ExpiresAt,
-			&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		ts.Service = &s
-		result = append(result, &ts)
-	}
-	return result, rows.Err()
-}

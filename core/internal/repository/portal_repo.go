@@ -5,9 +5,12 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tu-org/tenant-core/internal/domain"
 )
+
+var _ domain.PortalRepository = (*PortalRepo)(nil)
 
 type PortalRepo struct {
 	db *pgxpool.Pool
@@ -15,6 +18,48 @@ type PortalRepo struct {
 
 func NewPortalRepo(db *pgxpool.Pool) *PortalRepo {
 	return &PortalRepo{db: db}
+}
+
+func (r *PortalRepo) ListByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*domain.Portal, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, tenant_id, name, domain, description, config, is_active, created_at, updated_at
+		FROM tenant_portals
+		WHERE tenant_id = $1
+		ORDER BY created_at
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list portals: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*domain.Portal
+	for rows.Next() {
+		var p domain.Portal
+		if err := rows.Scan(
+			&p.ID, &p.TenantID, &p.Name, &p.Domain, &p.Description,
+			&p.Config, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, &p)
+	}
+	return result, rows.Err()
+}
+
+func (r *PortalRepo) Create(ctx context.Context, input domain.CreatePortalInput) (*domain.Portal, error) {
+	var p domain.Portal
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO tenant_portals (tenant_id, name, domain, description, config)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, tenant_id, name, domain, description, config, is_active, created_at, updated_at
+	`, input.TenantID, input.Name, input.Domain, input.Description, input.Config).Scan(
+		&p.ID, &p.TenantID, &p.Name, &p.Domain, &p.Description,
+		&p.Config, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create portal: %w", err)
+	}
+	return &p, nil
 }
 
 func (r *PortalRepo) GetByID(ctx context.Context, portalID, tenantID uuid.UUID) (*domain.Portal, error) {
@@ -33,26 +78,116 @@ func (r *PortalRepo) GetByID(ctx context.Context, portalID, tenantID uuid.UUID) 
 	return &p, nil
 }
 
+func (r *PortalRepo) Update(ctx context.Context, portalID uuid.UUID, input domain.UpdatePortalInput) (*domain.Portal, error) {
+	isActive := pgtype.Bool{}
+	if input.IsActive != nil {
+		isActive = pgtype.Bool{Bool: *input.IsActive, Valid: true}
+	}
+
+	var p domain.Portal
+	err := r.db.QueryRow(ctx, `
+		UPDATE tenant_portals
+		SET
+			name        = CASE WHEN $2::text IS NOT NULL THEN $2::text ELSE name END,
+			domain      = CASE WHEN $3::text IS NOT NULL THEN $3::text ELSE domain END,
+			description = CASE WHEN $4::text IS NOT NULL THEN $4::text ELSE description END,
+			is_active   = CASE WHEN $5::boolean IS NOT NULL THEN $5::boolean ELSE is_active END,
+			updated_at  = NOW()
+		WHERE id = $1
+		RETURNING id, tenant_id, name, domain, description, config, is_active, created_at, updated_at
+	`, portalID, input.Name, input.Domain, input.Description, isActive).Scan(
+		&p.ID, &p.TenantID, &p.Name, &p.Domain, &p.Description,
+		&p.Config, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update portal: %w", err)
+	}
+	return &p, nil
+}
+
+func (r *PortalRepo) AssignService(ctx context.Context, input domain.AssignPortalServiceInput) (*domain.PortalService, error) {
+	var ps domain.PortalService
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO portal_services (portal_id, service_id, slug, sort_order, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (portal_id, service_id) DO UPDATE SET
+			slug       = EXCLUDED.slug,
+			sort_order = EXCLUDED.sort_order,
+			is_enabled = TRUE,
+			expires_at = EXCLUDED.expires_at,
+			enabled_at = NOW()
+		RETURNING service_id, slug, sort_order
+	`, input.PortalID, input.ServiceID, input.Slug, input.SortOrder, input.ExpiresAt).
+		Scan(&ps.ServiceID, &ps.Slug, &ps.SortOrder)
+	if err != nil {
+		return nil, fmt.Errorf("assign portal service: %w", err)
+	}
+	return &ps, nil
+}
+
+func (r *PortalRepo) UnassignService(ctx context.Context, portalID, serviceID uuid.UUID) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE portal_services SET is_enabled = FALSE WHERE portal_id = $1 AND service_id = $2`,
+		portalID, serviceID,
+	)
+	return err
+}
+
 func (r *PortalRepo) GetServices(ctx context.Context, portalID uuid.UUID) ([]*domain.PortalService, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
 			s.id,
-			ts.slug,
+			ps.slug,
 			s.name,
 			s.mfe_url,
 			s.config || ps.config_override AS config,
 			ps.sort_order
 		FROM portal_services ps
-		JOIN tenant_services ts ON ts.id = ps.tenant_service_id
-		JOIN services s         ON s.id  = ts.service_id
+		JOIN services s ON s.id = ps.service_id
 		WHERE ps.portal_id  = $1
 		  AND ps.is_enabled = TRUE
-		  AND ts.is_enabled = TRUE
 		  AND s.is_active   = TRUE
 		ORDER BY ps.sort_order, s.name
 	`, portalID)
 	if err != nil {
 		return nil, fmt.Errorf("get portal services: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*domain.PortalService
+	for rows.Next() {
+		var ps domain.PortalService
+		if err := rows.Scan(
+			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL,
+			&ps.Config, &ps.SortOrder,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, &ps)
+	}
+	return result, rows.Err()
+}
+
+// ListServicesByTenant returns the distinct enabled services across all portals of a tenant.
+func (r *PortalRepo) ListServicesByTenant(ctx context.Context, tenantID uuid.UUID) ([]*domain.PortalService, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT ON (ps.service_id)
+			s.id,
+			ps.slug,
+			s.name,
+			s.mfe_url,
+			s.config || ps.config_override AS config,
+			ps.sort_order
+		FROM portal_services ps
+		JOIN tenant_portals p ON p.id = ps.portal_id
+		JOIN services s       ON s.id = ps.service_id
+		WHERE p.tenant_id  = $1
+		  AND ps.is_enabled = TRUE
+		  AND s.is_active   = TRUE
+		ORDER BY ps.service_id, ps.slug
+	`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list tenant services: %w", err)
 	}
 	defer rows.Close()
 

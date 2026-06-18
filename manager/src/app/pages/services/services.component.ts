@@ -73,10 +73,8 @@ export class ServicesComponent implements OnInit {
 
 	createForm = this.fb.group({
 		name: ['', Validators.required],
-		slug: ['', Validators.required],
 		version: ['1.0.0', Validators.required],
 		mfe_url: ['', Validators.required],
-		api_url: [''],
 		description: [''],
 	})
 
@@ -84,17 +82,14 @@ export class ServicesComponent implements OnInit {
 		name: [''],
 		version: [''],
 		mfe_url: [''],
-		api_url: [''],
 		description: [''],
 		is_active: [true],
 	})
 
 	createFields: FormField[] = [
 		{ name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Mi Servicio' },
-		{ name: 'slug', label: 'Slug', type: 'text', required: true, placeholder: 'mi-servicio' },
 		{ name: 'version', label: 'Versión', type: 'text', required: true, placeholder: '1.0.0' },
 		{ name: 'mfe_url', label: 'MFE URL', type: 'text', required: true, placeholder: 'http://localhost:4200/remoteEntry.js' },
-		{ name: 'api_url', label: 'API URL', type: 'text', placeholder: 'http://localhost:3000' },
 		{ name: 'description', label: 'Descripción', type: 'textarea' },
 	]
 
@@ -102,7 +97,6 @@ export class ServicesComponent implements OnInit {
 		{ name: 'name', label: 'Nombre', type: 'text', placeholder: 'Mi Servicio' },
 		{ name: 'version', label: 'Versión', type: 'text', placeholder: '1.0.0' },
 		{ name: 'mfe_url', label: 'MFE URL', type: 'text', placeholder: 'http://localhost:4200/remoteEntry.js' },
-		{ name: 'api_url', label: 'API URL', type: 'text', placeholder: 'http://localhost:3000' },
 		{ name: 'description', label: 'Descripción', type: 'textarea' },
 		{
 			name: 'is_active',
@@ -116,12 +110,11 @@ export class ServicesComponent implements OnInit {
 	]
 
 	columns: CompactListColumn<Service>[] = [
-		{ key: 'name', header: 'Nombre', type: 'text' },
-		{ key: 'slug', header: 'Slug', type: 'text' },
-		{ key: 'version', header: 'Versión', type: 'text' },
-		{ key: 'mfe_url', header: 'MFE URL', type: 'text' },
-		{ key: 'api_url', header: 'API URL', type: 'text', transform: s => s.api_url ?? '—' },
-		{ key: 'is_active', header: 'Activo', type: 'boolean' },
+		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
+		{ key: 'version', prop: 'version', header: 'Versión', type: 'text' },
+		{ key: 'mfe_url', prop: 'mfe_url', header: 'MFE URL', type: 'text' },
+		{ key: 'description', header: 'Descripción', type: 'text', transform: s => s.description ?? '—' },
+		{ key: 'is_active', prop: 'is_active', header: 'Activo', type: 'boolean' },
 	]
 
 	actions: CompactListAction<Service>[] = [
@@ -154,8 +147,7 @@ export class ServicesComponent implements OnInit {
 				name: event.item.name,
 				version: event.item.version,
 				mfe_url: event.item.mfe_url,
-				api_url: event.item.api_url ?? '',
-				description: (event.item as any).description ?? '',
+				description: event.item.description ?? '',
 				is_active: event.item.is_active,
 			})
 			this.showEdit.set(true)
@@ -173,13 +165,12 @@ export class ServicesComponent implements OnInit {
 			return
 		}
 		const v = this.createForm.getRawValue()
-		const body: {
-			name: string; slug: string; version: string; mfe_url: string; api_url?: string; description?: string
-		} = { name: v.name!, slug: v.slug!, version: v.version!, mfe_url: v.mfe_url! }
-		if (v.api_url) body.api_url = v.api_url
-		if (v.description) body.description = v.description
-
-		this.admin.createService(body).subscribe({
+		this.admin.createService({
+			name: v.name!,
+			version: v.version!,
+			mfe_url: v.mfe_url!,
+			...(v.description ? { description: v.description } : {}),
+		}).subscribe({
 			next: res => {
 				this.services.update(list => [res.data, ...list])
 				this.showCreate.set(false)
@@ -195,11 +186,10 @@ export class ServicesComponent implements OnInit {
 	onUpdate() {
 		if (!this.editTarget) return
 		const v = this.editForm.getRawValue()
-		const body: { name?: string; version?: string; mfe_url?: string; api_url?: string; description?: string; is_active?: boolean } = {}
+		const body: Parameters<AdminService['updateService']>[1] = {}
 		if (v.name) body.name = v.name
 		if (v.version) body.version = v.version
 		if (v.mfe_url) body.mfe_url = v.mfe_url
-		if (v.api_url !== null) body.api_url = v.api_url ?? undefined
 		if (v.description !== null) body.description = v.description ?? undefined
 		if (v.is_active !== null) body.is_active = v.is_active!
 

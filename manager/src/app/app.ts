@@ -7,13 +7,12 @@ import { RouterOutlet } from '@angular/router'
 	imports: [RouterOutlet],
 	template: '<div [attr.data-theme]="theme()"><router-outlet /></div>',
 	encapsulation: ViewEncapsulation.ShadowDom,
-	styleUrls: ['../styles.css'],
 })
 export class App implements OnInit, OnDestroy {
 	// lib-drawer-bar sets data-theme on <html>; mirror it here so DaisyUI selectors
 	// inside the shadow root react to theme changes.
 	theme = signal(
-		localStorage.getItem('data-theme') ?? document.documentElement.getAttribute('data-theme') ?? 'corporate',
+		localStorage.getItem('data-theme') ?? document.documentElement.getAttribute('data-theme') ?? 'cupcake',
 	)
 
 	private observer = new MutationObserver(() => {
@@ -22,6 +21,11 @@ export class App implements OnInit, OnDestroy {
 	})
 
 	ngOnInit() {
+		if (!localStorage.getItem('data-theme')) {
+			localStorage.setItem('data-theme', 'cupcake')
+			document.documentElement.setAttribute('data-theme', 'cupcake')
+			this.theme.set('cupcake')
+		}
 		this.observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 	}
 

@@ -29,7 +29,7 @@ export async function mount(props: Record<string, unknown>): Promise<void> {
 			: (document.getElementById('shell-content') ?? document.body)
 
 	const root = document.createElement('app-root')
-	root.setAttribute('data-theme', 'corporate')
+	root.setAttribute('data-theme', 'cupcake')
 	container.appendChild(root)
 
 	const basePath = typeof props['basePath'] === 'string' ? props['basePath'] : '/manager'

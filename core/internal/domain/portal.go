@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,4 +34,30 @@ type CreatePortalInput struct {
 	Domain      *string   `json:"domain,omitempty"`
 	Description *string   `json:"description,omitempty"`
 	Config      JSONMap   `json:"config"`
+}
+
+type UpdatePortalInput struct {
+	Name        *string `json:"name,omitempty"`
+	Domain      *string `json:"domain,omitempty"`
+	Description *string `json:"description,omitempty"`
+	IsActive    *bool   `json:"is_active,omitempty"`
+}
+
+type AssignPortalServiceInput struct {
+	PortalID  uuid.UUID  `json:"portal_id"`
+	ServiceID uuid.UUID  `json:"service_id"`
+	Slug      string     `json:"slug"`
+	SortOrder int        `json:"sort_order"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+type PortalRepository interface {
+	GetByID(ctx context.Context, portalID, tenantID uuid.UUID) (*Portal, error)
+	ListByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*Portal, error)
+	Create(ctx context.Context, input CreatePortalInput) (*Portal, error)
+	Update(ctx context.Context, portalID uuid.UUID, input UpdatePortalInput) (*Portal, error)
+	AssignService(ctx context.Context, input AssignPortalServiceInput) (*PortalService, error)
+	UnassignService(ctx context.Context, portalID, serviceID uuid.UUID) error
+	GetServices(ctx context.Context, portalID uuid.UUID) ([]*PortalService, error)
+	ListServicesByTenant(ctx context.Context, tenantID uuid.UUID) ([]*PortalService, error)
 }

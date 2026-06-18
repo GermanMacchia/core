@@ -77,12 +77,24 @@ func (r *AuthRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, err
 	return &u, nil
 }
 
+func (r *AuthRepo) GetTenantStatus(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	var status string
+	err := r.db.QueryRow(ctx, `SELECT status FROM tenants WHERE id = $1`, tenantID).Scan(&status)
+	if err != nil {
+		return "", fmt.Errorf("get tenant status: %w", err)
+	}
+	return status, nil
+}
+
 func (r *AuthRepo) GetTenantServiceIDs(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT s.id::text
-		FROM tenant_services ts
-		JOIN services s ON s.id = ts.service_id
-		WHERE ts.tenant_id = $1 AND ts.is_enabled = TRUE AND s.is_active = TRUE
+		SELECT DISTINCT s.id::text
+		FROM portal_services ps
+		JOIN tenant_portals p ON p.id = ps.portal_id
+		JOIN services s       ON s.id = ps.service_id
+		WHERE p.tenant_id   = $1
+		  AND ps.is_enabled = TRUE
+		  AND s.is_active   = TRUE
 	`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get tenant service ids: %w", err)

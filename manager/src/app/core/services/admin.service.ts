@@ -3,9 +3,12 @@ import { HttpClient, HttpHeaders } from '@angular/common/http'
 import { AuthService } from './auth.service'
 import {
 	ApiResponse,
+	Plan,
+	PlanServicePricing,
 	Tenant,
 	Service,
-	TenantServiceEntry,
+	Portal,
+	PortalService,
 	TenantUser,
 } from '../models/tenant.model'
 
@@ -20,6 +23,63 @@ export class AdminService {
 		return new HttpHeaders({ Authorization: `Bearer ${this.auth.accessToken()}` })
 	}
 
+	// ── Plans ─────────────────────────────────────────────────────────────────
+
+	listPlans() {
+		return this.http.get<ApiResponse<Plan[]>>(`${CORE_API}/api/v1/plans`, {
+			headers: this.headers,
+		})
+	}
+
+	getPlan(id: string) {
+		return this.http.get<ApiResponse<Plan>>(`${CORE_API}/api/v1/plans/${id}`, {
+			headers: this.headers,
+		})
+	}
+
+	createPlan(body: { name: string; max_users: number; max_services: number; price: number; features?: Record<string, unknown> }) {
+		return this.http.post<ApiResponse<Plan>>(`${CORE_API}/api/v1/plans`, body, {
+			headers: this.headers,
+		})
+	}
+
+	updatePlan(
+		id: string,
+		body: { name?: string; max_users?: number; max_services?: number; price?: number; features?: Record<string, unknown> },
+	) {
+		return this.http.patch<ApiResponse<Plan>>(`${CORE_API}/api/v1/plans/${id}`, body, {
+			headers: this.headers,
+		})
+	}
+
+	deletePlan(id: string) {
+		return this.http.delete(`${CORE_API}/api/v1/plans/${id}`, { headers: this.headers })
+	}
+
+	listPlanServicePricing(planId: string) {
+		return this.http.get<ApiResponse<PlanServicePricing[]>>(
+			`${CORE_API}/api/v1/plans/${planId}/services`,
+			{ headers: this.headers },
+		)
+	}
+
+	setPlanServicePricing(planId: string, serviceId: string, body: { price: number; is_included: boolean }) {
+		return this.http.put<ApiResponse<PlanServicePricing>>(
+			`${CORE_API}/api/v1/plans/${planId}/services/${serviceId}`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	removePlanServicePricing(planId: string, serviceId: string) {
+		return this.http.delete(
+			`${CORE_API}/api/v1/plans/${planId}/services/${serviceId}`,
+			{ headers: this.headers },
+		)
+	}
+
+	// ── Tenants ───────────────────────────────────────────────────────────────
+
 	listTenants(limit = 20, offset = 0) {
 		return this.http.get<ApiResponse<Tenant[]>>(
 			`${CORE_API}/api/v1/tenants?limit=${limit}&offset=${offset}`,
@@ -27,7 +87,7 @@ export class AdminService {
 		)
 	}
 
-	createTenant(body: { slug: string; name: string; domain?: string; plan_id: string }) {
+	createTenant(body: { name: string; domain?: string; plan_id: string }) {
 		return this.http.post<ApiResponse<Tenant>>(`${CORE_API}/api/v1/tenants`, body, {
 			headers: this.headers,
 		})
@@ -49,6 +109,60 @@ export class AdminService {
 		return this.http.delete(`${CORE_API}/api/v1/tenants/${id}`, { headers: this.headers })
 	}
 
+	// ── Portals ───────────────────────────────────────────────────────────────
+
+	listPortals(tenantId: string) {
+		return this.http.get<ApiResponse<Portal[]>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/portals`,
+			{ headers: this.headers },
+		)
+	}
+
+	createPortal(tenantId: string, body: { name: string; domain?: string; description?: string }) {
+		return this.http.post<ApiResponse<Portal>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/portals`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	updatePortal(portalId: string, body: { name?: string; domain?: string; description?: string; is_active?: boolean }) {
+		return this.http.patch<ApiResponse<Portal>>(
+			`${CORE_API}/api/v1/portals/${portalId}`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	// ── Portal services ───────────────────────────────────────────────────────
+
+	getPortalServices(portalId: string) {
+		return this.http.get<ApiResponse<PortalService[]>>(
+			`${CORE_API}/api/v1/portals/${portalId}/services`,
+			{ headers: this.headers },
+		)
+	}
+
+	assignPortalService(
+		portalId: string,
+		body: { service_id: string; slug: string; sort_order: number },
+	) {
+		return this.http.post<ApiResponse<PortalService>>(
+			`${CORE_API}/api/v1/portals/${portalId}/services`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	unassignPortalService(portalId: string, serviceId: string) {
+		return this.http.delete(
+			`${CORE_API}/api/v1/portals/${portalId}/services/${serviceId}`,
+			{ headers: this.headers },
+		)
+	}
+
+	// ── Services catalog ──────────────────────────────────────────────────────
+
 	listServices(all = true) {
 		const params = all ? '?all=true' : ''
 		return this.http.get<ApiResponse<Service[]>>(`${CORE_API}/api/v1/services${params}`, {
@@ -58,9 +172,7 @@ export class AdminService {
 
 	createService(body: {
 		name: string
-		slug: string
 		mfe_url: string
-		api_url?: string
 		description?: string
 		version: string
 	}) {
@@ -69,26 +181,32 @@ export class AdminService {
 		})
 	}
 
-	getTenantServices(tenantId: string) {
-		return this.http.get<ApiResponse<TenantServiceEntry[]>>(
-			`${CORE_API}/api/v1/tenants/${tenantId}/services`,
-			{ headers: this.headers },
-		)
-	}
-
-	enableService(tenantId: string, serviceId: string) {
-		return this.http.post<ApiResponse<TenantServiceEntry>>(
-			`${CORE_API}/api/v1/tenants/${tenantId}/services`,
-			{ service_id: serviceId },
-			{ headers: this.headers },
-		)
-	}
-
-	disableService(tenantId: string, serviceId: string) {
-		return this.http.delete(`${CORE_API}/api/v1/tenants/${tenantId}/services/${serviceId}`, {
+	getService(id: string) {
+		return this.http.get<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, {
 			headers: this.headers,
 		})
 	}
+
+	updateService(
+		id: string,
+		body: {
+			name?: string
+			mfe_url?: string
+			version?: string
+			description?: string
+			is_active?: boolean
+		},
+	) {
+		return this.http.patch<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, body, {
+			headers: this.headers,
+		})
+	}
+
+	deleteService(id: string) {
+		return this.http.delete(`${CORE_API}/api/v1/services/${id}`, { headers: this.headers })
+	}
+
+	// ── Tenant users ──────────────────────────────────────────────────────────
 
 	getTenantUsers(tenantId: string) {
 		return this.http.get<ApiResponse<TenantUser[]>>(
@@ -97,7 +215,7 @@ export class AdminService {
 		)
 	}
 
-	createTenantUser(tenantId: string, body: { email: string; password: string; role: string }) {
+	createTenantUser(tenantId: string, body: { email: string; password: string; role: string; portal_id?: string }) {
 		return this.http.post<ApiResponse<TenantUser>>(
 			`${CORE_API}/api/v1/tenants/${tenantId}/users`,
 			body,
@@ -105,7 +223,7 @@ export class AdminService {
 		)
 	}
 
-	updateTenantUser(tenantId: string, userId: string, body: { role?: string; is_active?: boolean }) {
+	updateTenantUser(tenantId: string, userId: string, body: { role?: string; is_active?: boolean; portal_id?: string }) {
 		return this.http.patch<ApiResponse<TenantUser>>(
 			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`,
 			body,
@@ -114,25 +232,8 @@ export class AdminService {
 	}
 
 	deleteTenantUser(tenantId: string, userId: string) {
-		return this.http.delete(
-			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`,
-			{ headers: this.headers },
-		)
-	}
-
-	getService(id: string) {
-		return this.http.get<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, {
+		return this.http.delete(`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`, {
 			headers: this.headers,
 		})
-	}
-
-	updateService(id: string, body: { name?: string; mfe_url?: string; api_url?: string; version?: string; description?: string; is_active?: boolean }) {
-		return this.http.patch<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, body, {
-			headers: this.headers,
-		})
-	}
-
-	deleteService(id: string) {
-		return this.http.delete(`${CORE_API}/api/v1/services/${id}`, { headers: this.headers })
 	}
 }

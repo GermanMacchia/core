@@ -21,7 +21,7 @@ type Plan struct {
 	Name        string    `json:"name"`
 	MaxUsers    int       `json:"max_users"`
 	MaxServices int       `json:"max_services"`
-	PriceUSD    float64   `json:"price_usd"`
+	Price    float64   `json:"price"`
 	Features    JSONMap   `json:"features"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -63,4 +63,47 @@ type TenantRepository interface {
 	List(ctx context.Context, limit, offset int) ([]*Tenant, error)
 	Update(ctx context.Context, id uuid.UUID, input UpdateTenantInput) (*Tenant, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type CreatePlanInput struct {
+	Name        string  `json:"name"`
+	MaxUsers    int     `json:"max_users"`
+	MaxServices int     `json:"max_services"`
+	Price    float64 `json:"price"`
+	Features    JSONMap `json:"features"`
+}
+
+type UpdatePlanInput struct {
+	Name        *string  `json:"name,omitempty"`
+	MaxUsers    *int     `json:"max_users,omitempty"`
+	MaxServices *int     `json:"max_services,omitempty"`
+	Price    *float64 `json:"price,omitempty"`
+	Features    JSONMap  `json:"features,omitempty"`
+}
+
+type PlanServicePricing struct {
+	ID         uuid.UUID `json:"id"`
+	PlanID     uuid.UUID `json:"plan_id"`
+	ServiceID  uuid.UUID `json:"service_id"`
+	Service    *Service  `json:"service,omitempty"`
+	Price   float64   `json:"price"`
+	IsIncluded bool      `json:"is_included"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type SetServicePricingInput struct {
+	ServiceID  uuid.UUID `json:"service_id"`
+	Price   float64   `json:"price"`
+	IsIncluded bool      `json:"is_included"`
+}
+
+type PlanRepository interface {
+	List(ctx context.Context) ([]*Plan, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*Plan, error)
+	Create(ctx context.Context, input CreatePlanInput) (*Plan, error)
+	Update(ctx context.Context, id uuid.UUID, input UpdatePlanInput) (*Plan, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+	ListServicePricing(ctx context.Context, planID uuid.UUID) ([]*PlanServicePricing, error)
+	SetServicePricing(ctx context.Context, planID uuid.UUID, input SetServicePricingInput) (*PlanServicePricing, error)
+	RemoveServicePricing(ctx context.Context, planID uuid.UUID, serviceID uuid.UUID) error
 }

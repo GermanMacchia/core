@@ -57,6 +57,7 @@ func main() {
 	serviceRepo := repository.NewServiceRepo(pool)
 	userRepo := repository.NewUserRepo(pool)
 	portalRepo := repository.NewPortalRepo(pool)
+	planRepo := repository.NewPlanRepo(pool)
 
 	// JWT
 	jwtManager := pkgjwt.NewManager(cfg.JWT.Secret)
@@ -66,9 +67,10 @@ func main() {
 	serviceSvc := service.NewServiceSvc(serviceRepo)
 
 	// Handlers
-	tenantHandler := handler.NewTenantHandler(tenantSvc, serviceSvc)
+	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo)
 	serviceHandler := handler.NewServiceHandler(serviceSvc)
 	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo)
+	planHandler := handler.NewPlanHandler(planRepo)
 
 	// Middleware
 	jwtMW := middleware.NewJWTMiddleware(jwtManager, redisCache)
@@ -110,16 +112,33 @@ func main() {
 		r.Get("/api/v1/tenants/{id}", tenantHandler.Get)
 		r.Patch("/api/v1/tenants/{id}", tenantHandler.Update)
 		r.Get("/api/v1/tenants/{id}/services", tenantHandler.GetServices)
-		r.Post("/api/v1/tenants/{id}/services", tenantHandler.EnableService)
-		r.Delete("/api/v1/tenants/{id}/services/{sid}", tenantHandler.DisableService)
 		r.Get("/api/v1/tenants/{id}/users", tenantHandler.GetUsers)
 		r.Post("/api/v1/tenants/{id}/users", tenantHandler.CreateUser)
 		r.Patch("/api/v1/tenants/{id}/users/{uid}", tenantHandler.UpdateUser)
 		r.Delete("/api/v1/tenants/{id}/users/{uid}", tenantHandler.DeleteUser)
 
+		// Portal management
+		r.Patch("/api/v1/portals/{portal_id}", portalHandler.UpdatePortal)
+
+		// Portal service management
+		r.Post("/api/v1/portals/{portal_id}/services", portalHandler.AssignService)
+		r.Delete("/api/v1/portals/{portal_id}/services/{service_id}", portalHandler.UnassignService)
+
 		// Service catalog
 		r.Get("/api/v1/services", serviceHandler.List)
 		r.Get("/api/v1/services/{id}", serviceHandler.Get)
+
+		// Plans
+		r.Get("/api/v1/plans", planHandler.List)
+		r.Get("/api/v1/plans/{id}", planHandler.Get)
+		r.Get("/api/v1/plans/{id}/services", planHandler.ListServicePricing)
+
+		// Portal management (tenant-scoped)
+		r.Get("/api/v1/tenants/{id}/portals", portalHandler.ListByTenant)
+		r.Post("/api/v1/tenants/{id}/portals", portalHandler.CreatePortal)
+
+		// Portal service management
+		r.Get("/api/v1/portals/{portal_id}/services", portalHandler.GetServicesAuth)
 
 		// Superadmin only
 		r.Group(func(r chi.Router) {
@@ -130,6 +149,11 @@ func main() {
 			r.Post("/api/v1/services", serviceHandler.Create)
 			r.Patch("/api/v1/services/{id}", serviceHandler.Update)
 			r.Delete("/api/v1/services/{id}", serviceHandler.Delete)
+			r.Post("/api/v1/plans", planHandler.Create)
+			r.Patch("/api/v1/plans/{id}", planHandler.Update)
+			r.Delete("/api/v1/plans/{id}", planHandler.Delete)
+			r.Put("/api/v1/plans/{id}/services/{service_id}", planHandler.SetServicePricing)
+			r.Delete("/api/v1/plans/{id}/services/{service_id}", planHandler.RemoveServicePricing)
 		})
 	})
 

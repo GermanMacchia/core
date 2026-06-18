@@ -1,17 +1,20 @@
+import { APP_BASE_HREF } from '@angular/common'
 import { inject } from '@angular/core'
 import { CanActivateFn, Router } from '@angular/router'
 import { AuthService } from '../services/auth.service'
 
 export const authGuard: CanActivateFn = (_route, state) => {
-	const auth   = inject(AuthService)
-	const router = inject(Router)
+	const auth     = inject(AuthService)
+	const router   = inject(Router)
+	const baseHref = inject(APP_BASE_HREF, { optional: true }) ?? '/manager'
 
 	if (!auth.isAuthenticated()) {
 		// When running inside the shell, delegate to the centralized login MFE
 		// so the user gets a true SSO flow instead of the manager's own login page.
 		const isInShell = typeof (window as any).__SHELL_CONTEXT__?.serviceId !== 'undefined'
 		if (isInShell) {
-			const returnPath = `/manager${state.url === '/' ? '' : state.url}`
+			const prefix     = baseHref === '/' ? '' : baseHref
+			const returnPath = `${prefix}${state.url === '/' ? '' : state.url}`
 			// history.pushState is intercepted by single-spa, triggering a routing change.
 			history.pushState(null, '', `/login?return=${encodeURIComponent(returnPath)}`)
 			return false

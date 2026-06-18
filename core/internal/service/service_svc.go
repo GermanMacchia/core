@@ -8,6 +8,7 @@ import (
 	"github.com/tu-org/tenant-core/internal/repository"
 )
 
+
 type ServiceSvc struct {
 	repo *repository.ServiceRepo
 }
@@ -36,14 +37,3 @@ func (s *ServiceSvc) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *ServiceSvc) EnableForTenant(ctx context.Context, input domain.EnableServiceInput) (*domain.TenantService, error) {
-	return s.repo.EnableForTenant(ctx, input)
-}
-
-func (s *ServiceSvc) DisableForTenant(ctx context.Context, tenantID, serviceID uuid.UUID) error {
-	return s.repo.DisableForTenant(ctx, tenantID, serviceID)
-}
-
-func (s *ServiceSvc) GetTenantServices(ctx context.Context, tenantID uuid.UUID) ([]*domain.TenantService, error) {
-	return s.repo.GetTenantServices(ctx, tenantID)
-}

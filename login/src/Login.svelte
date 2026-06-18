@@ -14,7 +14,7 @@
 	// ── Config reactiva ──────────────────────────────────────────────────
 	$: cfg = parseCfg(config);
 	$: name = cfg.name ?? 'Platform';
-	$: logoUrl = cfg.logo_url ?? '';
+	$: logoUrl = cfg.logo_url || new URL('/brand-logo-colored.svg', import.meta.url).href;
 	$: primary = cfg.primary_color ?? '#6366f1';
 	$: authUrl = (cfg.auth_url ?? 'http://localhost:8081').replace(/\/$/, '');
 
@@ -260,11 +260,16 @@
 
 	/* ── Logo ── */
 	.logo-img {
-		width: 60px;
-		height: 60px;
+		width: 200px;
+		height: 200px;
 		object-fit: contain;
 		border-radius: 0.875rem;
 		margin-bottom: 0.5rem;
+		transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+	}
+
+	.logo-img:hover {
+		transform: scale(1.08) rotate(2deg);
 	}
 
 	.logo-icon {

@@ -9,17 +9,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/tu-org/tenant-core/internal/domain"
 	"github.com/tu-org/tenant-core/internal/middleware"
+	"github.com/tu-org/tenant-core/internal/repository"
 	"github.com/tu-org/tenant-core/internal/service"
 	"github.com/tu-org/tenant-core/pkg/response"
 )
 
 type TenantHandler struct {
-	tenants  *service.TenantService
-	services *service.ServiceSvc
+	tenants *service.TenantService
+	portals *repository.PortalRepo
 }
 
-func NewTenantHandler(tenants *service.TenantService, services *service.ServiceSvc) *TenantHandler {
-	return &TenantHandler{tenants: tenants, services: services}
+func NewTenantHandler(tenants *service.TenantService, portals *repository.PortalRepo) *TenantHandler {
+	return &TenantHandler{tenants: tenants, portals: portals}
 }
 
 func (h *TenantHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +115,7 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// GetServices lists all enabled services for a tenant across all their portals.
 func (h *TenantHandler) GetServices(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -125,71 +127,12 @@ func (h *TenantHandler) GetServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	svcs, err := h.services.GetTenantServices(r.Context(), id)
+	svcs, err := h.portals.ListServicesByTenant(r.Context(), id)
 	if err != nil {
 		response.InternalError(w)
 		return
 	}
 	response.JSON(w, http.StatusOK, svcs)
-}
-
-func (h *TenantHandler) EnableService(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		response.BadRequest(w, "invalid tenant id")
-		return
-	}
-	if !allowTenantAccess(r, tenantID) {
-		middleware.Forbidden(w)
-		return
-	}
-
-	var body struct {
-		ServiceID uuid.UUID `json:"service_id"`
-		Slug      string    `json:"slug"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		response.BadRequest(w, "invalid request body")
-		return
-	}
-	if body.Slug == "" {
-		response.BadRequest(w, "slug is required")
-		return
-	}
-
-	ts, err := h.services.EnableForTenant(r.Context(), domain.EnableServiceInput{
-		TenantID:  tenantID,
-		ServiceID: body.ServiceID,
-		Slug:      body.Slug,
-	})
-	if err != nil {
-		response.InternalError(w)
-		return
-	}
-	response.JSON(w, http.StatusCreated, ts)
-}
-
-func (h *TenantHandler) DisableService(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		response.BadRequest(w, "invalid tenant id")
-		return
-	}
-	if !allowTenantAccess(r, tenantID) {
-		middleware.Forbidden(w)
-		return
-	}
-	serviceID, err := uuid.Parse(chi.URLParam(r, "sid"))
-	if err != nil {
-		response.BadRequest(w, "invalid service id")
-		return
-	}
-
-	if err := h.services.DisableForTenant(r.Context(), tenantID, serviceID); err != nil {
-		response.InternalError(w)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *TenantHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +246,7 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantSvcs, err := h.services.GetTenantServices(r.Context(), tenant.ID)
+	svcs, err := h.portals.ListServicesByTenant(r.Context(), tenant.ID)
 	if err != nil {
 		response.InternalError(w)
 		return
@@ -329,15 +272,12 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		meta.PrimaryColor = v
 	}
 
-	mfes := make([]mfeEntry, 0, len(tenantSvcs))
-	for _, ts := range tenantSvcs {
-		if ts.Service == nil || !ts.IsEnabled {
-			continue
-		}
-		isPublic, _ := ts.Service.Config["public"].(bool)
+	mfes := make([]mfeEntry, 0, len(svcs))
+	for _, svc := range svcs {
+		isPublic, _ := svc.Config["public"].(bool)
 		mfes = append(mfes, mfeEntry{
-			Slug:   ts.Slug,
-			MFEURL: ts.Service.MFEURL,
+			Slug:   svc.Slug,
+			MFEURL: svc.MFEURL,
 			Public: isPublic,
 		})
 	}
@@ -362,7 +302,7 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantSvcs, err := h.services.GetTenantServices(r.Context(), tenant.ID)
+	svcs, err := h.portals.ListServicesByTenant(r.Context(), tenant.ID)
 	if err != nil {
 		response.InternalError(w)
 		return
@@ -382,11 +322,9 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 		Plan string `json:"plan"`
 	}
 
-	svcItems := make([]serviceItem, 0, len(tenantSvcs))
-	for _, ts := range tenantSvcs {
-		if ts.Service != nil {
-			svcItems = append(svcItems, serviceItem{Slug: ts.Slug, MFEURL: ts.Service.MFEURL})
-		}
+	svcItems := make([]serviceItem, 0, len(svcs))
+	for _, svc := range svcs {
+		svcItems = append(svcItems, serviceItem{Slug: svc.Slug, MFEURL: svc.MFEURL})
 	}
 
 	planName := ""

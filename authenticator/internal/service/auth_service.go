@@ -19,6 +19,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrUserInactive       = errors.New("user is inactive")
+	ErrTenantSuspended    = errors.New("tenant is suspended or cancelled")
 	ErrTokenExpired       = errors.New("token expired")
 	ErrTokenRevoked       = errors.New("token revoked")
 )
@@ -66,6 +67,11 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 
 	if !user.IsActive {
 		return nil, ErrUserInactive
+	}
+
+	tenantStatus, err := s.repo.GetTenantStatus(ctx, user.TenantID)
+	if err != nil || tenantStatus == "suspended" || tenantStatus == "cancelled" {
+		return nil, ErrTenantSuspended
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
@@ -139,6 +145,11 @@ func (s *AuthService) Refresh(ctx context.Context, rawToken, userAgent, ip strin
 	user, err := s.repo.GetByID(ctx, rt.UserID)
 	if err != nil {
 		return nil, err
+	}
+
+	tenantStatus, err := s.repo.GetTenantStatus(ctx, user.TenantID)
+	if err != nil || tenantStatus == "suspended" || tenantStatus == "cancelled" {
+		return nil, ErrTenantSuspended
 	}
 
 	if err := s.repo.RevokeRefreshToken(ctx, tokenHash); err != nil {

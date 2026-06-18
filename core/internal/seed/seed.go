@@ -108,21 +108,6 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 		return err
 	}
 
-	// Link both services to the tenant with their routing slugs
-	type tenantSvc struct {
-		id   uuid.UUID
-		slug string
-	}
-	for _, ts := range []tenantSvc{{loginServiceID, "login"}, {managerServiceID, "manager"}} {
-		if _, err := db.Exec(ctx, `
-			INSERT INTO tenant_services (tenant_id, service_id, slug, is_enabled)
-			VALUES ($1, $2, $3, TRUE)
-			ON CONFLICT (tenant_id, service_id) DO UPDATE SET slug = EXCLUDED.slug, is_enabled = TRUE
-		`, tenantID, ts.id, ts.slug); err != nil {
-			return err
-		}
-	}
-
 	// Portal config holds auth_api_url as fallback for services
 	portalConfig, err := json.Marshal(map[string]any{
 		"auth_api_url": cfg.AuthAPIURL,
@@ -140,23 +125,22 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 	}
 	portalID := adminPortalID
 
-	// Link services to the portal (login=sort_order 0, manager=sort_order 1)
+	// Assign services directly to the portal with their routing slugs and order
 	type portalSvc struct {
 		svcID uuid.UUID
+		slug  string
 		order int
 	}
-	for _, ps := range []portalSvc{{loginServiceID, 0}, {managerServiceID, 1}} {
-		var tsSvcID uuid.UUID
-		if err := db.QueryRow(ctx, `
-			SELECT id FROM tenant_services WHERE tenant_id = $1 AND service_id = $2
-		`, tenantID, ps.svcID).Scan(&tsSvcID); err != nil {
-			return err
-		}
+	for _, ps := range []portalSvc{
+		{loginServiceID, "login", 0},
+		{managerServiceID, "manager", 1},
+	} {
 		if _, err := db.Exec(ctx, `
-			INSERT INTO portal_services (portal_id, tenant_service_id, is_enabled, sort_order)
-			VALUES ($1, $2, TRUE, $3)
-			ON CONFLICT (portal_id, tenant_service_id) DO UPDATE SET sort_order = EXCLUDED.sort_order
-		`, portalID, tsSvcID, ps.order); err != nil {
+			INSERT INTO portal_services (portal_id, service_id, slug, sort_order, is_enabled)
+			VALUES ($1, $2, $3, $4, TRUE)
+			ON CONFLICT (portal_id, service_id) DO UPDATE
+				SET slug = EXCLUDED.slug, sort_order = EXCLUDED.sort_order, is_enabled = TRUE
+		`, portalID, ps.svcID, ps.slug, ps.order); err != nil {
 			return err
 		}
 	}
