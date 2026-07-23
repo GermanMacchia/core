@@ -20,7 +20,8 @@ type Config struct {
 
 	Seed SeedConfig
 
-	PublicAPIKey string
+	PublicAPIKey  string
+	ServiceAPIKey string
 }
 
 type DBConfig struct {
@@ -102,7 +103,8 @@ func Load() (*Config, error) {
 			LoginMFEURL:   viper.GetString("SEED_LOGIN_MFE_URL"),
 			AuthAPIURL:    viper.GetString("SEED_AUTH_API_URL"),
 		},
-		PublicAPIKey: viper.GetString("PUBLIC_API_KEY"),
+		PublicAPIKey:  viper.GetString("PUBLIC_API_KEY"),
+		ServiceAPIKey: viper.GetString("SERVICE_API_KEY"),
 	}
 
 	return cfg, nil

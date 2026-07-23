@@ -92,10 +92,11 @@ func (r *PortalRepo) Update(ctx context.Context, portalID uuid.UUID, input domai
 			domain      = CASE WHEN $3::text IS NOT NULL THEN $3::text ELSE domain END,
 			description = CASE WHEN $4::text IS NOT NULL THEN $4::text ELSE description END,
 			is_active   = CASE WHEN $5::boolean IS NOT NULL THEN $5::boolean ELSE is_active END,
+			config      = CASE WHEN $6::jsonb IS NOT NULL THEN $6::jsonb ELSE config END,
 			updated_at  = NOW()
 		WHERE id = $1
 		RETURNING id, tenant_id, name, domain, description, config, is_active, created_at, updated_at
-	`, portalID, input.Name, input.Domain, input.Description, isActive).Scan(
+	`, portalID, input.Name, input.Domain, input.Description, isActive, input.Config).Scan(
 		&p.ID, &p.TenantID, &p.Name, &p.Domain, &p.Description,
 		&p.Config, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -108,19 +109,65 @@ func (r *PortalRepo) Update(ctx context.Context, portalID uuid.UUID, input domai
 func (r *PortalRepo) AssignService(ctx context.Context, input domain.AssignPortalServiceInput) (*domain.PortalService, error) {
 	var ps domain.PortalService
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO portal_services (portal_id, service_id, slug, sort_order, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (portal_id, service_id) DO UPDATE SET
-			slug       = EXCLUDED.slug,
-			sort_order = EXCLUDED.sort_order,
-			is_enabled = TRUE,
-			expires_at = EXCLUDED.expires_at,
-			enabled_at = NOW()
-		RETURNING service_id, slug, sort_order
+		WITH upsert AS (
+			INSERT INTO portal_services (portal_id, service_id, slug, sort_order, expires_at)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (portal_id, service_id) DO UPDATE SET
+				slug       = EXCLUDED.slug,
+				sort_order = EXCLUDED.sort_order,
+				is_enabled = TRUE,
+				expires_at = EXCLUDED.expires_at,
+				enabled_at = NOW()
+			RETURNING service_id, slug, sort_order, config_override
+		)
+		SELECT
+			u.service_id,
+			u.slug,
+			s.name,
+			s.mfe_url,
+			s.config || u.config_override AS config,
+			u.sort_order
+		FROM upsert u
+		JOIN services s ON s.id = u.service_id
 	`, input.PortalID, input.ServiceID, input.Slug, input.SortOrder, input.ExpiresAt).
-		Scan(&ps.ServiceID, &ps.Slug, &ps.SortOrder)
+		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.Config, &ps.SortOrder)
 	if err != nil {
 		return nil, fmt.Errorf("assign portal service: %w", err)
+	}
+	return &ps, nil
+}
+
+func (r *PortalRepo) UpdatePortalService(ctx context.Context, portalID, serviceID uuid.UUID, input domain.UpdatePortalServiceInput) (*domain.PortalService, error) {
+	sortOrder := pgtype.Int4{}
+	if input.SortOrder != nil {
+		sortOrder = pgtype.Int4{Int32: int32(*input.SortOrder), Valid: true}
+	}
+
+	var ps domain.PortalService
+	err := r.db.QueryRow(ctx, `
+		WITH updated AS (
+			UPDATE portal_services
+			SET
+				slug            = CASE WHEN $3::text IS NOT NULL THEN $3::text ELSE slug END,
+				sort_order      = CASE WHEN $4::integer IS NOT NULL THEN $4::integer ELSE sort_order END,
+				config_override = CASE WHEN $5::jsonb IS NOT NULL THEN $5::jsonb ELSE config_override END,
+				expires_at      = CASE WHEN $6::timestamptz IS NOT NULL THEN $6::timestamptz ELSE expires_at END
+			WHERE portal_id = $1 AND service_id = $2
+			RETURNING portal_id, service_id, slug, sort_order, config_override
+		)
+		SELECT
+			u.service_id,
+			u.slug,
+			s.name,
+			s.mfe_url,
+			s.config || u.config_override AS config,
+			u.sort_order
+		FROM updated u
+		JOIN services s ON s.id = u.service_id
+	`, portalID, serviceID, input.Slug, sortOrder, input.ConfigOverride, input.ExpiresAt).
+		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.Config, &ps.SortOrder)
+	if err != nil {
+		return nil, fmt.Errorf("update portal service: %w", err)
 	}
 	return &ps, nil
 }

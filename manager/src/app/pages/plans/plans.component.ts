@@ -1,20 +1,21 @@
 import { Component, inject, signal, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
-import { FormBuilder, Validators } from '@angular/forms'
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms'
 import {
 	CompactList,
-	Form,
 	ToastService,
 	InfoModalService,
 } from '@germanmacchia/angular-ui'
-import type { CompactListColumn, CompactListAction, FormField } from '@germanmacchia/angular-ui'
+import type { CompactListColumn, CompactListAction } from '@germanmacchia/angular-ui'
 import { AdminService } from '../../core/services/admin.service'
-import { Plan } from '../../core/models/tenant.model'
+import { ConfigDefinition, Plan } from '../../core/models/tenant.model'
+import { ConfigEditorComponent } from '../../shared/config-editor.component'
+import { buildConfigFromValues, defaultConfigValues } from '../../shared/config-fields'
 
 @Component({
 	selector: 'app-plans',
 	standalone: true,
-	imports: [CompactList, Form],
+	imports: [CompactList, ReactiveFormsModule, ConfigEditorComponent],
 	template: `
 		<div class="p-6 lg:p-10 max-w-6xl">
 			<div class="flex items-center justify-between mb-6">
@@ -39,14 +40,45 @@ import { Plan } from '../../core/models/tenant.model'
 				(actionClick)="onAction($event)" />
 		</div>
 
-		<lib-form
-			[formGroup]="createForm"
-			[fields]="createFields"
-			[displayMode]="'modal'"
-			[title]="'Nuevo plan'"
-			[isOpen]="showCreate()"
-			(submitEvent)="onCreate()"
-			(cancelEvent)="showCreate.set(false)" />
+		<!-- Create Modal -->
+		<dialog class="modal" [class.modal-open]="showCreate()">
+			<div class="modal-box w-11/12 max-w-lg flex flex-col p-0 max-h-[90vh]">
+				<div class="px-6 py-4 border-b border-base-200">
+					<h3 class="font-semibold text-lg">Nuevo plan</h3>
+				</div>
+				<form [formGroup]="createForm" class="flex flex-col overflow-hidden">
+					<div class="px-6 py-5 flex-1 overflow-y-auto">
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+							<label class="form-control md:col-span-2">
+								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
+								<input formControlName="name" type="text" class="input input-bordered" placeholder="Starter">
+							</label>
+							<label class="form-control">
+								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Máx. usuarios <span class="text-error text-xs">*</span></span></div>
+								<input formControlName="max_users" type="number" class="input input-bordered" placeholder="-1">
+							</label>
+							<label class="form-control">
+								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Máx. servicios <span class="text-error text-xs">*</span></span></div>
+								<input formControlName="max_services" type="number" class="input input-bordered" placeholder="-1">
+							</label>
+							<label class="form-control">
+								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Precio / mes <span class="text-error text-xs">*</span></span></div>
+								<input formControlName="price" type="number" class="input input-bordered" placeholder="49">
+							</label>
+						</div>
+						<app-config-editor
+							[defs]="configDefs()"
+							[value]="createConfigValues()"
+							(valueChange)="createConfigValues.set($event)" />
+					</div>
+					<div class="px-6 py-4 border-t border-base-200 flex justify-end gap-2">
+						<button type="button" class="btn btn-ghost btn-sm" (click)="showCreate.set(false)">Cancelar</button>
+						<button type="button" class="btn btn-primary btn-sm" (click)="onCreate()">Crear</button>
+					</div>
+				</form>
+			</div>
+			<form method="dialog" class="modal-backdrop" (click)="showCreate.set(false)"><button>close</button></form>
+		</dialog>
 	`,
 })
 export class PlansComponent implements OnInit {
@@ -60,42 +92,31 @@ export class PlansComponent implements OnInit {
 	loading = signal(true)
 	showCreate = signal(false)
 
+	configDefs = signal<ConfigDefinition[]>([])
+	createConfigValues = signal<Record<string, string>>({})
+
 	createForm = this.fb.group({
 		name: ['', Validators.required],
 		max_users: [10, Validators.required],
 		max_services: [5, Validators.required],
 		price: [0, [Validators.required, Validators.min(0)]],
-		features: ['{}'],
 	})
-
-	createFields: FormField[] = [
-		{ name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Starter' },
-		{ name: 'max_users', label: 'Máx. usuarios (-1 = ilimitado)', type: 'text', required: true, placeholder: '10' },
-		{ name: 'max_services', label: 'Máx. servicios (-1 = ilimitado)', type: 'text', required: true, placeholder: '5' },
-		{ name: 'price', label: 'Precio / mes', type: 'text', required: true, placeholder: '49' },
-		{ name: 'features', label: 'Features (JSON)', type: 'text', placeholder: '{}' },
-	]
 
 	columns: CompactListColumn<Plan>[] = [
 		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
 		{
 			key: 'max_users',
-			header: 'Usuarios',
+			header: 'Máx. usuarios',
 			type: 'text',
 			transform: (p: Plan) => p.max_users === -1 ? 'Ilimitado' : String(p.max_users),
 		},
 		{
 			key: 'max_services',
-			header: 'Servicios',
+			header: 'Máx. servicios',
 			type: 'text',
 			transform: (p: Plan) => p.max_services === -1 ? 'Ilimitado' : String(p.max_services),
 		},
-		{
-			key: 'price',
-			header: 'Precio',
-			type: 'text',
-			transform: (p: Plan) => `$${p.price}`,
-		},
+		{ key: 'price', header: 'Precio', type: 'text', transform: (p: Plan) => `$${p.price}` },
 		{
 			key: 'features',
 			header: 'Features',
@@ -114,6 +135,7 @@ export class PlansComponent implements OnInit {
 
 	ngOnInit() {
 		this.load()
+		this.loadConfigDefs()
 	}
 
 	load() {
@@ -130,13 +152,23 @@ export class PlansComponent implements OnInit {
 		})
 	}
 
+	loadConfigDefs() {
+		this.admin.listConfigDefinitions().subscribe({
+			next: res => {
+				const defs = (res.data ?? []).filter(d => d.scope === 'plan')
+				this.configDefs.set(defs)
+				this.createConfigValues.set(defaultConfigValues(defs))
+			},
+		})
+	}
+
 	onAction(event: { action: string; item: Plan }) {
 		if (event.action === 'detail') {
 			this.router.navigate(['/plans', event.item.id])
 		} else if (event.action === 'delete') {
 			this.infoModal.openAsConfirm(
 				() => this.doDelete(event.item),
-				`¿Eliminar el plan "${event.item.name}"? Esta acción afectará a los tenants que lo usen.`,
+				`¿Eliminar el plan "${event.item.name}"? Esta acción afectará los tenants que lo usen.`,
 			)
 		}
 	}
@@ -147,25 +179,24 @@ export class PlansComponent implements OnInit {
 			return
 		}
 		const v = this.createForm.getRawValue()
-		this.admin
-			.createPlan({
-				name: v.name!,
-				max_users: Number(v.max_users),
-				max_services: Number(v.max_services),
-				price: Number(v.price),
-				features: this.parseFeatures(v.features),
-			})
-			.subscribe({
-				next: res => {
-					this.plans.update(list => [...list, res.data])
-					this.showCreate.set(false)
-					this.createForm.reset({ max_users: 10, max_services: 5, price: 0, features: '{}' })
-					this.toast.toast({ severity: 'success', body: `Plan "${res.data.name}" creado.` })
-				},
-				error: err => {
-					this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al crear el plan.' })
-				},
-			})
+		this.admin.createPlan({
+			name: v.name!,
+			max_users: Number(v.max_users),
+			max_services: Number(v.max_services),
+			price: Number(v.price),
+			features: buildConfigFromValues(this.createConfigValues(), this.configDefs()),
+		}).subscribe({
+			next: res => {
+				this.plans.update(list => [res.data, ...list])
+				this.showCreate.set(false)
+				this.createForm.reset({ max_users: 10, max_services: 5, price: 0 })
+				this.createConfigValues.set(defaultConfigValues(this.configDefs()))
+				this.toast.toast({ severity: 'success', body: `Plan "${res.data.name}" creado.` })
+			},
+			error: err => {
+				this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al crear el plan.' })
+			},
+		})
 	}
 
 	private doDelete(plan: Plan) {
@@ -178,9 +209,5 @@ export class PlansComponent implements OnInit {
 				this.toast.toast({ severity: 'error', body: 'Error al eliminar el plan.' })
 			},
 		})
-	}
-
-	private parseFeatures(s: string | null): Record<string, unknown> {
-		try { return JSON.parse(s ?? '{}') } catch { return {} }
 	}
 }

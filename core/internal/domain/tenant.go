@@ -61,6 +61,7 @@ type TenantRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Tenant, error)
 	GetByDomain(ctx context.Context, domain string) (*Tenant, error)
 	List(ctx context.Context, limit, offset int) ([]*Tenant, error)
+	ListByService(ctx context.Context, serviceIdentifier string) ([]*Tenant, error)
 	Update(ctx context.Context, id uuid.UUID, input UpdateTenantInput) (*Tenant, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }

@@ -61,3 +61,8 @@ func (s *TenantService) UpdateUser(ctx context.Context, id uuid.UUID, input doma
 func (s *TenantService) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return s.userRepo.Delete(ctx, id)
 }
+
+func (s *TenantService) ListByService(ctx context.Context, serviceIdentifier string) ([]*domain.Tenant, error) {
+	return s.repo.ListByService(ctx, serviceIdentifier)
+}
+

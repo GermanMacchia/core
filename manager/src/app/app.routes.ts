@@ -54,6 +54,14 @@ export const routes: Routes = [
 				loadComponent: () =>
 					import('./pages/plan-detail/plan-detail.component').then(m => m.PlanDetailComponent),
 			},
+			{
+				path: 'config-definitions',
+				canActivate: [superAdminGuard],
+				loadComponent: () =>
+					import('./pages/config-definitions/config-definitions.component').then(
+						m => m.ConfigDefinitionsComponent,
+					),
+			},
 		],
 	},
 	{ path: '**', redirectTo: '' },

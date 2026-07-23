@@ -121,3 +121,13 @@ export interface PlanServicePricing {
 	is_included: boolean
 	created_at: string
 }
+
+export interface ConfigDefinition {
+	id?: string // Client-side identifier (scope:key) for lists
+	key: string
+	scope: 'service' | 'portal' | 'tenant' | 'plan'
+	type: 'bool' | 'string' | 'string[]'
+	description?: string | null
+	default_val?: string | null
+}
+

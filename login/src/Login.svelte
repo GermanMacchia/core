@@ -1,6 +1,8 @@
 <svelte:options customElement="login-mfe" />
 
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	export let config: string = '{}';
 
 	// ── Tipos ────────────────────────────────────────────────────────────
@@ -76,6 +78,17 @@
 			loading = false;
 		}
 	}
+
+	onMount(() => {
+		const handleRejection = (e: CustomEvent<{ message: string }>) => {
+			errorMsg = e.detail?.message ?? 'Tu rol no tiene permisos para acceder a esta plataforma.';
+			loading = false;
+		};
+		window.addEventListener('loginrejected', handleRejection as EventListener);
+		return () => {
+			window.removeEventListener('loginrejected', handleRejection as EventListener);
+		};
+	});
 </script>
 
 <!-- ──────────────────── markup ──────────────────── -->

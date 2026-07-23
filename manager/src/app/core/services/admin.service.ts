@@ -10,6 +10,7 @@ import {
 	Portal,
 	PortalService,
 	TenantUser,
+	ConfigDefinition,
 } from '../models/tenant.model'
 
 const CORE_API = 'http://localhost:8080'
@@ -99,7 +100,7 @@ export class AdminService {
 		})
 	}
 
-	updateTenant(id: string, body: { name?: string; domain?: string; status?: string }) {
+	updateTenant(id: string, body: { name?: string; domain?: string; status?: string; config?: Record<string, unknown> }) {
 		return this.http.patch<ApiResponse<Tenant>>(`${CORE_API}/api/v1/tenants/${id}`, body, {
 			headers: this.headers,
 		})
@@ -118,7 +119,7 @@ export class AdminService {
 		)
 	}
 
-	createPortal(tenantId: string, body: { name: string; domain?: string; description?: string }) {
+	createPortal(tenantId: string, body: { name: string; domain?: string; description?: string; config?: Record<string, unknown> }) {
 		return this.http.post<ApiResponse<Portal>>(
 			`${CORE_API}/api/v1/tenants/${tenantId}/portals`,
 			body,
@@ -126,7 +127,7 @@ export class AdminService {
 		)
 	}
 
-	updatePortal(portalId: string, body: { name?: string; domain?: string; description?: string; is_active?: boolean }) {
+	updatePortal(portalId: string, body: { name?: string; domain?: string; description?: string; is_active?: boolean; config?: Record<string, unknown> }) {
 		return this.http.patch<ApiResponse<Portal>>(
 			`${CORE_API}/api/v1/portals/${portalId}`,
 			body,
@@ -154,6 +155,18 @@ export class AdminService {
 		)
 	}
 
+	updatePortalService(
+		portalId: string,
+		serviceId: string,
+		body: { slug?: string; sort_order?: number; config_override?: Record<string, unknown> },
+	) {
+		return this.http.patch<ApiResponse<PortalService>>(
+			`${CORE_API}/api/v1/portals/${portalId}/services/${serviceId}`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
 	unassignPortalService(portalId: string, serviceId: string) {
 		return this.http.delete(
 			`${CORE_API}/api/v1/portals/${portalId}/services/${serviceId}`,
@@ -175,6 +188,7 @@ export class AdminService {
 		mfe_url: string
 		description?: string
 		version: string
+		config?: Record<string, unknown>
 	}) {
 		return this.http.post<ApiResponse<Service>>(`${CORE_API}/api/v1/services`, body, {
 			headers: this.headers,
@@ -195,6 +209,7 @@ export class AdminService {
 			version?: string
 			description?: string
 			is_active?: boolean
+			config?: Record<string, unknown>
 		},
 	) {
 		return this.http.patch<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, body, {
@@ -233,6 +248,54 @@ export class AdminService {
 
 	deleteTenantUser(tenantId: string, userId: string) {
 		return this.http.delete(`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`, {
+			headers: this.headers,
+		})
+	}
+
+	// ── Config Definitions ──────────────────────────────────────────────────
+
+	listConfigDefinitions() {
+		return this.http.get<ApiResponse<ConfigDefinition[]>>(`${CORE_API}/api/v1/config-definitions`, {
+			headers: this.headers,
+		})
+	}
+
+	createConfigDefinition(body: {
+		key: string
+		scope: string
+		type: string
+		description?: string | null
+		default_val?: string | null
+	}) {
+		return this.http.post<ApiResponse<ConfigDefinition>>(`${CORE_API}/api/v1/config-definitions`, body, {
+			headers: this.headers,
+		})
+	}
+
+	updateConfigDefinition(
+		scope: string,
+		key: string,
+		body: {
+			type?: string
+			description?: string | null
+			default_val?: string | null
+		},
+	) {
+		return this.http.patch<ApiResponse<ConfigDefinition>>(
+			`${CORE_API}/api/v1/config-definitions/${scope}/${key}`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	deleteConfigDefinition(scope: string, key: string) {
+		return this.http.delete(`${CORE_API}/api/v1/config-definitions/${scope}/${key}`, {
+			headers: this.headers,
+		})
+	}
+
+	resetCache() {
+		return this.http.post<ApiResponse<{ message: string }>>(`${CORE_API}/api/v1/cache/reset`, {}, {
 			headers: this.headers,
 		})
 	}

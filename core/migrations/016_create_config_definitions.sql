@@ -1,7 +1,7 @@
 -- +migrate Up
 CREATE TABLE config_definitions (
     key         VARCHAR(100) NOT NULL,
-    scope       VARCHAR(20)  NOT NULL CHECK (scope IN ('service', 'portal', 'tenant')),
+    scope       VARCHAR(20)  NOT NULL CHECK (scope IN ('service', 'portal', 'tenant', 'plan')),
     type        VARCHAR(20)  NOT NULL CHECK (type  IN ('bool', 'string', 'string[]')),
     description TEXT,
     default_val TEXT,

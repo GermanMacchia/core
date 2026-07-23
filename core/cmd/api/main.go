@@ -58,6 +58,7 @@ func main() {
 	userRepo := repository.NewUserRepo(pool)
 	portalRepo := repository.NewPortalRepo(pool)
 	planRepo := repository.NewPlanRepo(pool)
+	configDefinitionRepo := repository.NewConfigDefinitionRepo(pool)
 
 	// JWT
 	jwtManager := pkgjwt.NewManager(cfg.JWT.Secret)
@@ -71,12 +72,15 @@ func main() {
 	serviceHandler := handler.NewServiceHandler(serviceSvc)
 	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo)
 	planHandler := handler.NewPlanHandler(planRepo)
+	configDefinitionHandler := handler.NewConfigDefinitionHandler(configDefinitionRepo)
+	cacheHandler := handler.NewCacheHandler(redisCache)
 
 	// Middleware
 	jwtMW := middleware.NewJWTMiddleware(jwtManager, redisCache)
 	tenantResolverMW := middleware.NewTenantResolver(tenantRepo, redisCache)
 	rateLimiterMW := middleware.NewRateLimiter(redisCache, 60)
 	apiKeyMW := middleware.NewAPIKeyMiddleware(cfg.PublicAPIKey)
+	serviceAPIKeyMW := middleware.NewAPIKeyMiddleware(cfg.ServiceAPIKey)
 
 	// Router
 	r := chi.NewRouter()
@@ -101,6 +105,12 @@ func main() {
 		r.Get("/api/v1/public/portals/{portal_id}", portalHandler.PublicConfig)
 	})
 
+	// Services routes — Service API key required
+	r.Group(func(r chi.Router) {
+		r.Use(serviceAPIKeyMW.Verify)
+		r.Get("/api/v1/public/services/{service_identifier}/tenants", tenantHandler.PublicListByService)
+	})
+
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(jwtMW.Verify)
@@ -122,6 +132,7 @@ func main() {
 
 		// Portal service management
 		r.Post("/api/v1/portals/{portal_id}/services", portalHandler.AssignService)
+		r.Patch("/api/v1/portals/{portal_id}/services/{service_id}", portalHandler.UpdatePortalService)
 		r.Delete("/api/v1/portals/{portal_id}/services/{service_id}", portalHandler.UnassignService)
 
 		// Service catalog
@@ -154,6 +165,16 @@ func main() {
 			r.Delete("/api/v1/plans/{id}", planHandler.Delete)
 			r.Put("/api/v1/plans/{id}/services/{service_id}", planHandler.SetServicePricing)
 			r.Delete("/api/v1/plans/{id}/services/{service_id}", planHandler.RemoveServicePricing)
+
+			// Config Definitions
+			r.Get("/api/v1/config-definitions", configDefinitionHandler.List)
+			r.Get("/api/v1/config-definitions/{scope}/{key}", configDefinitionHandler.Get)
+			r.Post("/api/v1/config-definitions", configDefinitionHandler.Create)
+			r.Patch("/api/v1/config-definitions/{scope}/{key}", configDefinitionHandler.Update)
+			r.Delete("/api/v1/config-definitions/{scope}/{key}", configDefinitionHandler.Delete)
+
+			// Cache Management
+			r.Post("/api/v1/cache/reset", cacheHandler.Reset)
 		})
 	})
 

@@ -122,6 +122,26 @@ import { AuthService } from '../core/services/auth.service'
 								}
 							</a>
 						</li>
+						<li>
+							<a
+								routerLink="/config-definitions"
+								routerLinkActive="active"
+								class="flex flex-nowrap tooltip-right"
+								[class.justify-start]="drawerOpen()"
+								[class.justify-center]="!drawerOpen()"
+								[class.pl-5]="drawerOpen()"
+								[class.px-0]="!drawerOpen()"
+								[class.gap-3]="drawerOpen()"
+								[class.tooltip]="!drawerOpen()"
+								[attr.data-tip]="!drawerOpen() ? 'Configuraciones' : null">
+								<div class="flex items-center justify-center min-w-6 w-6 shrink-0 text-lg">
+									<i class="bi bi-sliders"></i>
+								</div>
+								@if (drawerOpen()) {
+									<span class="font-medium truncate text-left">Configs</span>
+								}
+							</a>
+						</li>
 					}
 				</ul>
 			</lib-drawer-bar>
@@ -132,6 +152,11 @@ import { AuthService } from '../core/services/auth.service'
 		</div>
 
 		<lib-info-modal />
+	`,
+	styles: `
+		.gm-drawer-bar_title {
+			margin-left: 1rem;
+		}
 	`,
 })
 export class LayoutComponent implements OnInit, OnDestroy {

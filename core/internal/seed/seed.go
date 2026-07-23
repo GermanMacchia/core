@@ -89,7 +89,7 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 	if _, err := db.Exec(ctx, `
 		INSERT INTO services (id, name, mfe_url, config)
 		VALUES ($1, 'Login', $2, $3)
-		ON CONFLICT (id) DO UPDATE SET mfe_url = EXCLUDED.mfe_url, config = EXCLUDED.config
+		ON CONFLICT (id) DO NOTHING
 	`, loginServiceID, cfg.LoginMFEURL, loginConfig); err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 	if _, err := db.Exec(ctx, `
 		INSERT INTO services (id, name, mfe_url, config)
 		VALUES ($1, 'Manager', $2, $3)
-		ON CONFLICT (id) DO UPDATE SET mfe_url = EXCLUDED.mfe_url, config = EXCLUDED.config
+		ON CONFLICT (id) DO NOTHING
 	`, managerServiceID, cfg.ManagerMFEURL, svcConfig); err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 	if _, err := db.Exec(ctx, `
 		INSERT INTO tenant_portals (id, tenant_id, name, config)
 		VALUES ($1, $2, 'Admin Portal', $3)
-		ON CONFLICT (id) DO UPDATE SET config = EXCLUDED.config
+		ON CONFLICT (id) DO NOTHING
 	`, adminPortalID, tenantID, portalConfig); err != nil {
 		return err
 	}
@@ -138,8 +138,7 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 		if _, err := db.Exec(ctx, `
 			INSERT INTO portal_services (portal_id, service_id, slug, sort_order, is_enabled)
 			VALUES ($1, $2, $3, $4, TRUE)
-			ON CONFLICT (portal_id, service_id) DO UPDATE
-				SET slug = EXCLUDED.slug, sort_order = EXCLUDED.sort_order, is_enabled = TRUE
+			ON CONFLICT (portal_id, service_id) DO NOTHING
 		`, portalID, ps.svcID, ps.slug, ps.order); err != nil {
 			return err
 		}

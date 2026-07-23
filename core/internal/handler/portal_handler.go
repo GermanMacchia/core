@@ -185,23 +185,13 @@ func (h *PortalHandler) UpdatePortal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Name        *string `json:"name,omitempty"`
-		Domain      *string `json:"domain,omitempty"`
-		Description *string `json:"description,omitempty"`
-		IsActive    *bool   `json:"is_active,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	var input domain.UpdatePortalInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
 
-	portal, err := h.portals.Update(r.Context(), portalID, domain.UpdatePortalInput{
-		Name:        body.Name,
-		Domain:      body.Domain,
-		Description: body.Description,
-		IsActive:    body.IsActive,
-	})
+	portal, err := h.portals.Update(r.Context(), portalID, input)
 	if err != nil {
 		response.InternalError(w)
 		return
@@ -284,4 +274,33 @@ func (h *PortalHandler) UnassignService(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdatePortalService updates fields of an assigned service in a portal.
+//
+//	PATCH /api/v1/portals/{portal_id}/services/{service_id}
+func (h *PortalHandler) UpdatePortalService(w http.ResponseWriter, r *http.Request) {
+	portalID, err := uuid.Parse(chi.URLParam(r, "portal_id"))
+	if err != nil {
+		response.BadRequest(w, "invalid portal_id")
+		return
+	}
+	serviceID, err := uuid.Parse(chi.URLParam(r, "service_id"))
+	if err != nil {
+		response.BadRequest(w, "invalid service_id")
+		return
+	}
+
+	var input domain.UpdatePortalServiceInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+
+	ps, err := h.portals.UpdatePortalService(r.Context(), portalID, serviceID, input)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusOK, ps)
 }

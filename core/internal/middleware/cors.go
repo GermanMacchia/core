@@ -26,6 +26,9 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 			w.Header().Set("Referrer-Policy", "no-referrer")
 
 			if r.Method == http.MethodOptions {
+				if r.Header.Get("Access-Control-Request-Private-Network") == "true" {
+					w.Header().Set("Access-Control-Allow-Private-Network", "true")
+				}
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

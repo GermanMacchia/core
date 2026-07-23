@@ -1,6 +1,6 @@
 import { Component, inject, signal, computed, OnInit } from '@angular/core'
 import { RouterLink } from '@angular/router'
-import { CompactList, CompactListCellDirective } from '@germanmacchia/angular-ui'
+import { CompactList, CompactListCellDirective, ToastService } from '@germanmacchia/angular-ui'
 import type { CompactListColumn } from '@germanmacchia/angular-ui'
 import { AdminService } from '../../core/services/admin.service'
 import { AuthService } from '../../core/services/auth.service'
@@ -19,12 +19,27 @@ const STATUS_BADGE: Record<string, string> = {
 	imports: [RouterLink, CompactList, CompactListCellDirective],
 	template: `
 		<div class="p-6 lg:p-10">
-			<div class="mb-8">
-				<h1 class="text-2xl font-bold text-base-content">Panel de administración</h1>
-				<p class="text-base-content/50 text-sm mt-0.5">
-					Conectado como <strong>{{ auth.currentUser()?.email }}</strong>
-					<span class="badge badge-sm badge-ghost ml-2">{{ auth.currentUser()?.role }}</span>
-				</p>
+			<div class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+				<div>
+					<h1 class="text-2xl font-bold text-base-content">Panel de administración</h1>
+					<p class="text-base-content/50 text-sm mt-0.5">
+						Conectado como <strong>{{ auth.currentUser()?.email }}</strong>
+						<span class="badge badge-sm badge-ghost ml-2">{{ auth.currentUser()?.role }}</span>
+					</p>
+				</div>
+				@if (isSuperAdmin()) {
+					<button 
+						class="btn btn-warning btn-outline sm:self-center flex gap-2 items-center" 
+						(click)="resetCache()" 
+						[disabled]="resettingCache()">
+						@if (resettingCache()) {
+							<span class="loading loading-spinner loading-xs"></span>
+						} @else {
+							<i class="bi bi-arrow-clockwise"></i>
+						}
+						Resetear Cache
+					</button>
+				}
 			</div>
 
 			<!-- Stats row -->
@@ -110,6 +125,10 @@ const STATUS_BADGE: Record<string, string> = {
 export class DashboardComponent implements OnInit {
 	protected auth = inject(AuthService)
 	private admin = inject(AdminService)
+	private toast = inject(ToastService)
+
+	isSuperAdmin = computed(() => this.auth.currentUser()?.role === 'superadmin')
+	resettingCache = signal(false)
 
 	tenants = signal<Tenant[]>([])
 	loading = signal(true)
@@ -128,6 +147,20 @@ export class DashboardComponent implements OnInit {
 		{ key: 'status', header: 'Estado', type: 'custom' },
 		{ key: 'created_at', header: 'Creado', type: 'text', transform: t => this.fmtDate(t.created_at) },
 	]
+
+	resetCache() {
+		this.resettingCache.set(true)
+		this.admin.resetCache().subscribe({
+			next: () => {
+				this.toast.toast({ severity: 'success', body: 'Cache de Redis restablecida correctamente.' })
+				this.resettingCache.set(false)
+			},
+			error: (err) => {
+				this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al restablecer la cache.' })
+				this.resettingCache.set(false)
+			}
+		})
+	}
 
 	ngOnInit() {
 		this.admin.listTenants(100, 0).subscribe({

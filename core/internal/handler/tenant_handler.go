@@ -319,7 +319,6 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	type tenantCtx struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
-		Plan string `json:"plan"`
 	}
 
 	svcItems := make([]serviceItem, 0, len(svcs))
@@ -327,16 +326,10 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 		svcItems = append(svcItems, serviceItem{Slug: svc.Slug, MFEURL: svc.MFEURL})
 	}
 
-	planName := ""
-	if tenant.Plan != nil {
-		planName = tenant.Plan.Name
-	}
-
 	response.JSON(w, http.StatusOK, map[string]any{
 		"tenant": tenantCtx{
 			ID:   tenant.ID.String(),
 			Name: tenant.Name,
-			Plan: planName,
 		},
 		"services": svcItems,
 		"user": userCtx{
@@ -353,3 +346,19 @@ func allowTenantAccess(r *http.Request, tenantID uuid.UUID) bool {
 	}
 	return claims.Role == "superadmin" || claims.TenantID == tenantID.String()
 }
+
+func (h *TenantHandler) PublicListByService(w http.ResponseWriter, r *http.Request) {
+	serviceIdentifier := chi.URLParam(r, "service_identifier")
+	if serviceIdentifier == "" {
+		response.BadRequest(w, "service_identifier is required")
+		return
+	}
+
+	tenants, err := h.tenants.ListByService(r.Context(), serviceIdentifier)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusOK, tenants)
+}
+

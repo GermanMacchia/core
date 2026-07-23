@@ -125,3 +125,59 @@ func (r *TenantRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `UPDATE tenants SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, id)
 	return err
 }
+
+func (r *TenantRepo) ListByService(ctx context.Context, serviceIdentifier string) ([]*domain.Tenant, error) {
+	var rows interface {
+		Next() bool
+		Scan(dest ...any) error
+		Close()
+		Err() error
+	}
+	var err error
+
+	serviceID, parseErr := uuid.Parse(serviceIdentifier)
+	if parseErr == nil {
+		rows, err = r.db.Query(ctx, `
+			SELECT DISTINCT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at
+			FROM tenants t
+			JOIN tenant_portals p ON p.tenant_id = t.id
+			JOIN portal_services ps ON ps.portal_id = p.id
+			JOIN services s ON s.id = ps.service_id
+			WHERE s.id = $1
+			  AND ps.is_enabled = TRUE
+			  AND s.is_active = TRUE
+			  AND t.status IN ('active', 'trial')
+			ORDER BY t.created_at DESC
+		`, serviceID)
+	} else {
+		rows, err = r.db.Query(ctx, `
+			SELECT DISTINCT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at
+			FROM tenants t
+			JOIN tenant_portals p ON p.tenant_id = t.id
+			JOIN portal_services ps ON ps.portal_id = p.id
+			JOIN services s ON s.id = ps.service_id
+			WHERE ps.slug = $1
+			  AND ps.is_enabled = TRUE
+			  AND s.is_active = TRUE
+			  AND t.status IN ('active', 'trial')
+			ORDER BY t.created_at DESC
+		`, serviceIdentifier)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list tenants by service query: %w", err)
+	}
+	defer rows.Close()
+
+	var tenants []*domain.Tenant
+	for rows.Next() {
+		var t domain.Tenant
+		if err := rows.Scan(
+			&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan tenant by service: %w", err)
+		}
+		tenants = append(tenants, &t)
+	}
+	return tenants, rows.Err()
+}
+

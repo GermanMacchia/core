@@ -78,11 +78,9 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 		return nil, ErrInvalidCredentials
 	}
 
-	// Superadmins get nil services (they bypass service-level access checks).
-	var services []string
-	if user.Role != domain.RoleSuperAdmin {
-		services, _ = s.repo.GetTenantServiceIDs(ctx, user.TenantID)
-	}
+	// El claim services refleja la suscripción del tenant para todos los
+	// roles, superadmin incluido: los servicios validan contra este claim.
+	services, _ := s.repo.GetTenantServiceIDs(ctx, user.TenantID)
 
 	expAt := time.Now().Add(s.cfg.AccessTokenDuration())
 	accessToken, err := s.jwtManager.GenerateAccess(
@@ -156,10 +154,7 @@ func (s *AuthService) Refresh(ctx context.Context, rawToken, userAgent, ip strin
 		return nil, err
 	}
 
-	var services []string
-	if user.Role != domain.RoleSuperAdmin {
-		services, _ = s.repo.GetTenantServiceIDs(ctx, user.TenantID)
-	}
+	services, _ := s.repo.GetTenantServiceIDs(ctx, user.TenantID)
 
 	expAt := time.Now().Add(s.cfg.AccessTokenDuration())
 	accessToken, err := s.jwtManager.GenerateAccess(

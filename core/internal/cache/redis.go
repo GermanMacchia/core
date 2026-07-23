@@ -74,6 +74,12 @@ func (c *Cache) Incr(ctx context.Context, key string, ttl time.Duration) (int64,
 	return incr.Val(), nil
 }
 
+// FlushDB clears the Redis cache database
+func (c *Cache) FlushDB(ctx context.Context) error {
+	return c.client.FlushDB(ctx).Err()
+}
+
+
 func TenantKey(id string) string          { return fmt.Sprintf("tenant:%s", id) }
 func TenantDomainKey(domain string) string { return fmt.Sprintf("tenant:domain:%s", domain) }
 func TenantServicesKey(id string) string  { return fmt.Sprintf("tenant:%s:services", id) }

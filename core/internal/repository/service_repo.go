@@ -79,10 +79,11 @@ func (r *ServiceRepo) Update(ctx context.Context, id uuid.UUID, input domain.Upd
 			version     = COALESCE($4, version),
 			description = COALESCE($5, description),
 			is_active   = COALESCE($6, is_active),
+			config      = CASE WHEN $7::jsonb IS NOT NULL THEN $7::jsonb ELSE config END,
 			updated_at  = NOW()
 		WHERE id = $1
 		RETURNING id, name, mfe_url, version, description, config, is_active, created_at, updated_at
-	`, id, input.Name, input.MFEURL, input.Version, input.Description, input.IsActive).
+	`, id, input.Name, input.MFEURL, input.Version, input.Description, input.IsActive, input.Config).
 		Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("update service: %w", err)

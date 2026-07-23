@@ -41,6 +41,7 @@ type UpdatePortalInput struct {
 	Domain      *string `json:"domain,omitempty"`
 	Description *string `json:"description,omitempty"`
 	IsActive    *bool   `json:"is_active,omitempty"`
+	Config      JSONMap `json:"config,omitempty"`
 }
 
 type AssignPortalServiceInput struct {
@@ -51,12 +52,20 @@ type AssignPortalServiceInput struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
+type UpdatePortalServiceInput struct {
+	Slug           *string    `json:"slug,omitempty"`
+	SortOrder      *int       `json:"sort_order,omitempty"`
+	ConfigOverride JSONMap    `json:"config_override,omitempty"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+}
+
 type PortalRepository interface {
 	GetByID(ctx context.Context, portalID, tenantID uuid.UUID) (*Portal, error)
 	ListByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*Portal, error)
 	Create(ctx context.Context, input CreatePortalInput) (*Portal, error)
 	Update(ctx context.Context, portalID uuid.UUID, input UpdatePortalInput) (*Portal, error)
 	AssignService(ctx context.Context, input AssignPortalServiceInput) (*PortalService, error)
+	UpdatePortalService(ctx context.Context, portalID, serviceID uuid.UUID, input UpdatePortalServiceInput) (*PortalService, error)
 	UnassignService(ctx context.Context, portalID, serviceID uuid.UUID) error
 	GetServices(ctx context.Context, portalID uuid.UUID) ([]*PortalService, error)
 	ListServicesByTenant(ctx context.Context, tenantID uuid.UUID) ([]*PortalService, error)
