@@ -7,7 +7,6 @@
 .angular
 # Go
 core/backend/bin/
-dbconfig.yml
 *.exe
 *.test
 *.out

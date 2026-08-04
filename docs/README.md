@@ -6,7 +6,7 @@ Plataforma de microservicios multi-tenant. Cuatro aplicaciones independientes co
 
 ## Aplicaciones
 
-### `core/` — Tenant Core API · Go · Puerto 8080
+### `core-backend/` — Tenant Core API · Go · Puerto 8080
 
 El componente central de la plataforma. Gestiona el catálogo de tenants y servicios, resuelve el contexto de cada request y expone la configuración que el Shell necesita para cargar los MFEs correctos.
 
@@ -25,7 +25,7 @@ El componente central de la plataforma. Gestiona el catálogo de tenants y servi
 
 ---
 
-### `authenticator/` — Auth Service · Go · Puerto 8081
+### `core-authenticator/` — Auth Service · Go · Puerto 8081
 
 Microservicio independiente, responsable exclusivo de la autenticación. Único firmante de JWT. El Core y cualquier otro servicio solo verifican la firma con el mismo `JWT_SECRET`.
 
@@ -39,11 +39,11 @@ Microservicio independiente, responsable exclusivo de la autenticación. Único 
 **Stack:** Go 1.22 · Chi · pgx/v5 · Redis · Zap  
 **Base de datos:** PostgreSQL `core_db` — misma instancia que Core, tablas `users` + `refresh_tokens`
 
-> `JWT_SECRET` debe ser idéntico en `core/.env` y `authenticator/.env`.
+> `JWT_SECRET` debe ser idéntico en `core-backend/.env` y `core-authenticator/.env`.
 
 ---
 
-### `manager/` — Shell Angular · Angular 22 · Puerto 4200
+### `core-manager/` — Shell Angular · Angular 22 · Puerto 4200
 
 Aplicación host que orquesta la carga dinámica de Micro-Frontends. Al iniciar resuelve el portal activo (por dominio) y carga únicamente los MFEs habilitados en ese portal. Usa inyección de `<script>` y Custom Elements como mecanismo de MFE (framework-agnostic, no requiere Webpack Module Federation).
 
@@ -59,7 +59,7 @@ Aplicación host que orquesta la carga dinámica de Micro-Frontends. Al iniciar 
 
 ---
 
-### `login/` — Login MFE · Svelte 5 · Dev :5173 · Preview :4174
+### `core-login/` — Login MFE · Svelte 5 · Dev :5173 · Preview :4174
 
 Micro-frontend de login compilado como Web Component (`<login-mfe>`). El Shell lo carga dinámicamente inyectando el bundle IIFE. Completamente personalizable por tenant a través de un atributo `config` JSON.
 
@@ -95,13 +95,13 @@ NGINX (reverse proxy / TLS)
       ├────────────────────┬─────────────────────────┐
       ▼                    ▼                         ▼
 Shell (Angular)      CORE (Go :8080)      AUTHENTICATOR (Go :8081)
-manager/ :4200       /api/v1/*            /auth/*
+core-manager/ :4200  /api/v1/*            /auth/*
       │                    │
       │ inyecta <script>   ├───────────┬──────────┐
       ▼                    ▼           ▼          ▼
 <login-mfe>           core_db      Redis      MFE 1..N
 (Svelte WC)           Postgres    (cache)
-login/dist/
+core-login/dist/
 login-mfe.iife.js
 ```
 
@@ -147,8 +147,8 @@ login-mfe.iife.js
 ### 1. Variables de entorno
 
 ```bash
-cp core/.env.example core/.env
-cp authenticator/.env.example authenticator/.env
+cp core-backend/.env.example core-backend/.env
+cp core-authenticator/.env.example core-authenticator/.env
 ```
 
 Editar ambos archivos. **El campo `JWT_SECRET` debe ser exactamente igual en los dos:**
@@ -162,10 +162,10 @@ openssl rand -hex 32
 
 ```bash
 # Levanta PostgreSQL y Redis compartidos
-docker compose -f core/docker-compose.yml up postgres redis -d
+docker compose -f core-backend/docker-compose.yml up postgres redis -d
 
 # Esperar a que postgres esté healthy
-docker compose -f core/docker-compose.yml ps
+docker compose -f core-backend/docker-compose.yml ps
 ```
 
 ### 3. Migraciones
@@ -178,7 +178,7 @@ Instalar el CLI una sola vez:
 go install github.com/rubenv/sql-migrate/...@latest
 ```
 
-Crear `core/dbconfig.yml` (no se sube al repo — ya está en `.gitignore`):
+Crear `core-backend/dbconfig.yml` (no se sube al repo — ya está en `.gitignore`):
 
 ```yaml
 development:
@@ -191,7 +191,7 @@ development:
 Correr las migraciones:
 
 ```bash
-cd core
+cd core-backend
 sql-migrate up
 ```
 
@@ -204,7 +204,7 @@ sql-migrate down     # revierte la última migración
 
 ### 4. Seed — Superadmin inicial
 
-El Core API crea el superadmin automáticamente en el primer arranque si las variables están presentes en `core/.env`:
+El Core API crea el superadmin automáticamente en el primer arranque si las variables están presentes en `core-backend/.env`:
 
 ```env
 SEED_ADMIN_EMAIL=admin@mirabit.com
@@ -221,16 +221,16 @@ Abrir cuatro terminales:
 
 ```bash
 # Terminal 1 — Core API
-cd core && go run ./cmd/api
+cd core-backend && go run ./cmd/api
 
 # Terminal 2 — Authenticator
-cd authenticator && go run ./cmd/api
+cd core-authenticator && go run ./cmd/api
 
 # Terminal 3 — Login MFE (dev con HMR)
-cd login && npm install && npm run dev
+cd core-login && npm install && npm run dev
 
 # Terminal 4 — Shell Angular
-cd manager && npm install && npx ng serve
+cd core-manager && npm install && npx ng serve
 ```
 
 | Servicio | URL | Notas |
@@ -245,8 +245,8 @@ cd manager && npm install && npx ng serve
 El Shell en producción carga `login-mfe.iife.js` desde una URL estática (CDN o servidor de archivos):
 
 ```bash
-cd login && npm run build
-# Output: login/dist/login-mfe.iife.js (~55 kB)
+cd core-login && npm run build
+# Output: core-login/dist/login-mfe.iife.js (~55 kB)
 ```
 
 ### 7. Health checks
@@ -285,7 +285,7 @@ El Shell y el Login MFE se sirven por separado (o desde Nginx en producción).
 | `SEED_ADMIN_PASSWORD` | core | Contraseña del superadmin inicial — remover tras el primer arranque |
 | `ENV` | core | `development` / `production` — en production activa el warning del seed |
 
-> `login/` y `manager/` no necesitan `.env` — se configuran en tiempo de ejecución a través de la API del Core.
+> `core-login/` y `core-manager/` no necesitan `.env` — se configuran en tiempo de ejecución a través de la API del Core.
 >
 > `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` son opcionales y solo necesarias en el primer arranque. En producción, inyectarlas como secrets del proveedor y removerlas después del primer deploy.
 
@@ -295,7 +295,7 @@ El Shell y el Login MFE se sirven por separado (o desde Nginx en producción).
 
 ```
 platform/
-├── core/                        # Tenant Core API (Go, :8080)
+├── core-backend/                # Tenant Core API (Go, :8080)
 │   ├── cmd/api/main.go
 │   ├── internal/
 │   │   ├── config/
@@ -313,7 +313,7 @@ platform/
 │   ├── docker-compose.yml
 │   └── .env.example
 │
-├── authenticator/               # Auth Service (Go, :8081)
+├── core-authenticator/          # Auth Service (Go, :8081)
 │   ├── cmd/api/main.go
 │   ├── internal/
 │   │   ├── domain/              # User, RefreshToken
@@ -324,22 +324,25 @@ platform/
 │   ├── pkg/jwt/                 # Sign() + Verify()
 │   └── .env.example
 │
-├── manager/                     # Shell Angular (:4200)
+├── core-manager/                # Shell Angular (:4200)
 │   ├── src/app/
 │   │   ├── core/
-│   │   │   ├── services/        # auth.service, tenant.service, admin.service, mfe-loader.service
+│   │   │   ├── services/        # auth.service, tenant.service, admin.service
 │   │   │   ├── guards/          # auth.guard, role.guard (superAdminGuard)
 │   │   │   └── models/          # tenant.model.ts
 │   │   ├── pages/
 │   │   │   ├── login-page/      # carga <login-mfe> dinámicamente
 │   │   │   ├── dashboard/       # lista MFEs habilitados del portal
 │   │   │   ├── tenants/         # gestión de tenants (superadmin)
-│   │   │   ├── tenant-detail/   # detalle + usuarios + servicios
-│   │   │   └── services/        # catálogo de servicios (superadmin)
-│   │   └── shell/               # navbar + layout base
+│   │   │   ├── tenant-detail/   # overview + portales + usuarios del tenant
+│   │   │   ├── services/        # catálogo de servicios (superadmin)
+│   │   │   ├── portals/         # vista global de portales, todos los tenants (superadmin)
+│   │   │   ├── plans/           # gestión de planes (superadmin)
+│   │   │   └── config-definitions/  # registro de config keys por scope (superadmin)
+│   │   └── layout/              # drawer nav + layout base (rutas autenticadas)
 │   └── package.json
 │
-├── login/                       # Login MFE (Svelte 5 → Web Component)
+├── core-login/                  # Login MFE (Svelte 5 → Web Component)
 │   ├── src/
 │   │   ├── Login.svelte         # <login-mfe> custom element
 │   │   └── main.ts
@@ -376,7 +379,7 @@ echo ".env" >> .gitignore
 Confirmar también que `node_modules/` y `dist/` están excluidos:
 
 ```bash
-git check-ignore -v manager/node_modules login/node_modules login/dist
+git check-ignore -v core-manager/node_modules core-login/node_modules core-login/dist
 # Todos deben mostrar que están siendo ignorados
 ```
 
@@ -394,12 +397,12 @@ Stagear solo los archivos del proyecto (nunca `-A` sin revisar primero):
 
 ```bash
 # Backend Go
-git add core/
-git add authenticator/
+git add core-backend/
+git add core-authenticator/
 
 # Frontend
-git add manager/
-git add login/
+git add core-manager/
+git add core-login/
 
 # Raíz
 git add .gitignore
@@ -458,7 +461,7 @@ git push -u origin main
 
 Abrir `https://github.com/tu-usuario/platform` y confirmar:
 
-- Carpetas `core/`, `authenticator/`, `manager/`, `login/` visibles
+- Carpetas `core-backend/`, `core-authenticator/`, `core-manager/`, `core-login/` visibles
 - **No** hay archivos `.env` en ninguna carpeta
 - **No** hay carpetas `node_modules/` ni `dist/` commiteadas
 - El `README.md` se renderiza correctamente

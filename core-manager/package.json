@@ -1,0 +1,46 @@
+{
+	"name": "core-manager",
+	"version": "1.0.0",
+	"scripts": {
+		"ng": "ng",
+		"start": "vite serve --config vite.dev.config.ts",
+		"build": "vite build --config vite.single-spa.config.ts",
+		"watch": "ng build --watch --configuration development",
+		"test": "ng test",
+		"format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+		"single-spa:serve": "vite serve --config vite.single-spa.config.ts",
+		"single-spa:serve:static": "concurrently \"vite build --config vite.single-spa.config.ts --watch\" \"serve dist-spa --cors -l 4201\"",
+		"single-spa:build": "vite build --config vite.single-spa.config.ts"
+	},
+	"private": true,
+	"type": "module",
+	"packageManager": "npm@11.6.2",
+	"dependencies": {
+		"@angular/common": "^22.0.0",
+		"@angular/compiler": "^22.0.0",
+		"@angular/core": "^22.0.0",
+		"@angular/forms": "^22.0.0",
+		"@angular/platform-browser": "^22.0.0",
+		"@angular/router": "^22.0.0",
+		"@germanmacchia/angular-ui": "^1.0.3",
+		"@tailwindcss/vite": "^4.3.0",
+		"bootstrap-icons": "^1.13.1",
+		"daisyui": "^5.5.20",
+		"rxjs": "~7.8.0",
+		"tailwindcss": "^4.3.0",
+		"tslib": "^2.3.0"
+	},
+	"devDependencies": {
+		"@analogjs/vite-plugin-angular": "latest",
+		"@angular/build": "^22.0.0",
+		"@angular/cli": "^22.0.0",
+		"@angular/compiler-cli": "^22.0.0",
+		"@tailwindcss/cli": "^4.3.0",
+		"@tailwindcss/postcss": "^4.3.0",
+		"concurrently": "^9.0.0",
+		"prettier": "^3.8.1",
+		"serve": "^14.0.0",
+		"typescript": "~6.0.2",
+		"vite": "^6.0.0"
+	}
+}

@@ -298,7 +298,7 @@ CREATE INDEX idx_portal_services_portal ON portal_services(portal_id);
 ### 4.1 Layout de Directorios
 
 ```
-core/
+core-backend/
 ├── cmd/api/main.go
 ├── internal/
 │   ├── config/
