@@ -10,11 +10,12 @@ import {
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router'
 import { DrawerBar, InfoModal } from '@germanmacchia/angular-ui'
 import { AuthService } from '../core/services/auth.service'
+import { HelpModalComponent } from './help-modal.component'
 
 @Component({
 	selector: 'app-layout',
 	standalone: true,
-	imports: [RouterOutlet, RouterLink, RouterLinkActive, DrawerBar, InfoModal],
+	imports: [RouterOutlet, RouterLink, RouterLinkActive, DrawerBar, InfoModal, HelpModalComponent],
 	encapsulation: ViewEncapsulation.None,
 	template: `
 		<div class="flex h-screen overflow-hidden">
@@ -24,6 +25,7 @@ import { AuthService } from '../core/services/auth.service'
 				[logout]="logoutFn"
 				[logoutLabel]="'Cerrar sesión'"
 				[(drawerOpen)]="drawerOpen">
+				<div class="flex flex-col h-full">
 				<!-- Logo Container -->
 				<div
 					class="flex items-center ml-12 w-full py-4 border-b border-base-300/30 select-none transition-all duration-300 hover:bg-base-300/10 cursor-pointer"
@@ -162,8 +164,51 @@ import { AuthService } from '../core/services/auth.service'
 								}
 							</a>
 						</li>
+						<li>
+							<a
+								routerLink="/faqs"
+								routerLinkActive="active"
+								class="flex flex-nowrap tooltip-right"
+								[class.justify-start]="drawerOpen()"
+								[class.justify-center]="!drawerOpen()"
+								[class.pl-5]="drawerOpen()"
+								[class.px-0]="!drawerOpen()"
+								[class.gap-3]="drawerOpen()"
+								[class.tooltip]="!drawerOpen()"
+								[attr.data-tip]="!drawerOpen() ? 'FAQs' : null">
+								<div class="flex items-center justify-center min-w-6 w-6 shrink-0 text-lg">
+									<i class="bi bi-patch-question"></i>
+								</div>
+								@if (drawerOpen()) {
+									<span class="font-medium truncate text-left">FAQs</span>
+								}
+							</a>
+						</li>
 					}
 				</ul>
+
+				<ul class="menu menu-sm w-full gap-1 p-2 mt-auto">
+					<li>
+						<a
+							class="flex flex-nowrap tooltip-right"
+							[class.justify-start]="drawerOpen()"
+							[class.justify-center]="!drawerOpen()"
+							[class.pl-5]="drawerOpen()"
+							[class.px-0]="!drawerOpen()"
+							[class.gap-3]="drawerOpen()"
+							[class.tooltip]="!drawerOpen()"
+							[attr.data-tip]="!drawerOpen() ? 'Ayuda' : null"
+							(click)="showHelp.set(true)">
+							<div class="flex items-center justify-center min-w-6 w-6 shrink-0 text-lg">
+								<i class="bi bi-question-circle"></i>
+							</div>
+							@if (drawerOpen()) {
+								<span class="font-medium truncate text-left">Ayuda</span>
+							}
+						</a>
+					</li>
+				</ul>
+				</div>
 			</lib-drawer-bar>
 
 			<main class="flex-1 overflow-y-auto">
@@ -171,6 +216,7 @@ import { AuthService } from '../core/services/auth.service'
 			</main>
 		</div>
 
+		<app-help-modal [open]="showHelp()" (closed)="showHelp.set(false)" />
 		<lib-info-modal />
 	`,
 	styles: `
@@ -185,6 +231,7 @@ export class LayoutComponent implements OnInit, OnDestroy {
 
 	isSuperAdmin = computed(() => this.auth.currentUser()?.role === 'superadmin')
 	drawerOpen = signal(true)
+	showHelp = signal(false)
 
 	currentTheme = signal(document.documentElement.getAttribute('data-theme') ?? 'cupcake')
 

@@ -68,6 +68,11 @@ export const routes: Routes = [
 						m => m.ConfigDefinitionsComponent,
 					),
 			},
+			{
+				path: 'faqs',
+				canActivate: [superAdminGuard],
+				loadComponent: () => import('./pages/faqs/faqs.component').then(m => m.FaqsComponent),
+			},
 		],
 	},
 	{ path: '**', redirectTo: '' },
