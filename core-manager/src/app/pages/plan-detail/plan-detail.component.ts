@@ -100,19 +100,19 @@ type Tab = 'overview' | 'addons'
 					<div class="px-6 py-5 flex-1 overflow-y-auto">
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
 							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="name" type="text" class="input input-bordered">
 							</label>
 							<label class="form-control">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Máx. usuarios <span class="text-error text-xs">*</span></span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Máx. usuarios <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="max_users" type="number" class="input input-bordered">
 							</label>
 							<label class="form-control">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Máx. servicios <span class="text-error text-xs">*</span></span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Máx. servicios <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="max_services" type="number" class="input input-bordered">
 							</label>
-							<label class="form-control">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Precio / mes <span class="text-error text-xs">*</span></span></div>
+							<label class="form-control md:col-span-2">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Precio / mes <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="price" type="number" class="input input-bordered">
 							</label>
 						</div>

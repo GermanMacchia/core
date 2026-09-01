@@ -48,15 +48,15 @@ const STATUS_BADGE: Record<string, string> = {
           <div class="px-6 py-5 flex-1 overflow-y-auto">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre</span></div>
                 <input formControlName="name" type="text" class="input input-bordered" placeholder="Nombre del tenant">
               </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Dominio</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Dominio</span></div>
                 <input formControlName="domain" type="text" class="input input-bordered" placeholder="acme.example.com">
               </label>
-              <label class="form-control">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Estado</span></div>
+              <label class="form-control md:col-span-2">
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Estado</span></div>
                 <select formControlName="status" class="select select-bordered">
                   <option value="active">Activo</option>
                   <option value="trial">Trial</option>
@@ -108,6 +108,7 @@ export class TenantOverviewComponent implements OnInit, OnChanges {
       layout: 'grid',
       gridCols: 2,
       sections: [
+        { name: 'ID', content: t.id, icon: 'bi bi-hash' },
         { name: 'Estado', content: t.status, type: 'badge', contentClass: this.statusBadge(t.status), icon: 'bi bi-circle' },
         { name: 'Dominio', content: t.domain ?? '—', icon: 'bi bi-globe' },
         { name: 'Plan', content: t.plan?.name ?? '—', icon: 'bi bi-credit-card' },

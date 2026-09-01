@@ -35,6 +35,15 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
         [booleanTrueLabel]="'Activo'"
         [booleanFalseLabel]="'Inactivo'"
         (actionClick)="onPortalAction($event)">
+        <ng-template compactListCell="id" let-item>
+          <button
+            class="text-xs text-base-content/60 hover:text-base-content flex items-center gap-1 cursor-pointer"
+            title="Copiar ID"
+            (click)="copyId(item.id)">
+            {{ item.id }}
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </ng-template>
         <ng-template compactListCell="domain" let-item>
           <span class="text-xs text-base-content/60">{{ item.domain ?? '—' }}</span>
         </ng-template>
@@ -48,6 +57,13 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
         @if (selectedPortal()!.domain) {
           <code class="text-xs bg-base-200 px-2 py-0.5 rounded">{{ selectedPortal()!.domain }}</code>
         }
+        <button
+          class="text-xs text-base-content/40 hover:text-base-content flex items-center gap-1 cursor-pointer"
+          title="Copiar ID"
+          (click)="copyId(selectedPortal()!.id)">
+          <i class="bi bi-hash"></i>{{ selectedPortal()!.id }}
+          <i class="bi bi-clipboard"></i>
+        </button>
       </div>
       <div class="flex justify-end mb-4">
         <button class="btn btn-primary btn-sm" (click)="openAssignService()">
@@ -76,15 +92,15 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
           <div class="px-6 py-5 flex-1 overflow-y-auto">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
                 <input formControlName="name" type="text" class="input input-bordered" placeholder="Admin Portal">
               </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Dominio</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Dominio</span></div>
                 <input formControlName="domain" type="text" class="input input-bordered" placeholder="admin.acme.com">
               </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Descripción</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
                 <input formControlName="description" type="text" class="input input-bordered" placeholder="Portal de administración">
               </label>
             </div>
@@ -112,19 +128,19 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
           <div class="px-6 py-5 flex-1 overflow-y-auto">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
                 <input formControlName="name" type="text" class="input input-bordered" placeholder="Admin Portal">
               </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Dominio</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Dominio</span></div>
                 <input formControlName="domain" type="text" class="input input-bordered" placeholder="admin.acme.com">
               </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Descripción</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
                 <input formControlName="description" type="text" class="input input-bordered" placeholder="Portal de administración">
               </label>
-              <label class="form-control">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Estado</span></div>
+              <label class="form-control md:col-span-2">
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Estado</span></div>
                 <select formControlName="is_active" class="select select-bordered">
                   <option [ngValue]="true">Activo</option>
                   <option [ngValue]="false">Inactivo</option>
@@ -165,11 +181,11 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
           <div class="px-6 py-5 flex-1 overflow-y-auto">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Slug de montaje <span class="text-error text-xs">*</span></span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Slug de montaje <span class="text-error text-xs">*</span></span></div>
                 <input formControlName="slug" type="text" class="input input-bordered" placeholder="/manager">
               </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Orden</span></div>
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Orden</span></div>
                 <input formControlName="sort_order" type="number" class="input input-bordered" placeholder="0">
               </label>
             </div>
@@ -254,6 +270,7 @@ export class TenantPortalsComponent implements OnInit {
   ])
 
   portalColumns: CompactListColumn<Portal>[] = [
+    { key: 'id', header: 'ID', type: 'custom' },
     { key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
     { key: 'domain', header: 'Dominio', type: 'custom' },
     { key: 'description', prop: 'description', header: 'Descripción', type: 'text' },
@@ -276,6 +293,13 @@ export class TenantPortalsComponent implements OnInit {
     { id: 'edit', icon: 'bi bi-pencil', tooltip: 'Editar' },
     { id: 'unassign', icon: 'bi bi-x-circle', tooltip: 'Desasignar', class: 'text-error' },
   ]
+
+  copyId(id: string) {
+    navigator.clipboard.writeText(id).then(
+      () => this.toast.toast({ severity: 'info', body: 'ID copiado al portapapeles.' }),
+      () => this.toast.toast({ severity: 'error', body: 'No se pudo copiar el ID.' }),
+    )
+  }
 
   ngOnInit() {
     this.loadPortals()
