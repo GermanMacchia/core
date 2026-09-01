@@ -1,0 +1,28 @@
+services:
+  core-authenticator:
+    build: .
+    container_name: core-authenticator
+    ports:
+      - "8081:8081"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: core_db
+      DB_USER: core_user
+      DB_PASSWORD: secret
+      DB_MAX_CONNS: 10
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: secret
+      JWT_SECRET: super-secret-change-in-production
+      JWT_EXP_MINUTES: 15
+      REFRESH_TOKEN_EXP_DAYS: 30
+      PORT: 8081
+      ENV: development
+      ALLOWED_ORIGINS: https://portal-core.netlify.app,http://localhost:9000,https://booking-shell.netlify.app
+    networks:
+      - core_default
+
+networks:
+  core_default:
+    external: true

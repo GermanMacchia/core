@@ -127,6 +127,25 @@ Salida esperada:
 {"level":"info","msg":"authenticator starting","port":"8081"}
 ```
 
+### Alternativa: Docker (Windows con Smart App Control)
+
+En Windows 11 con **Smart App Control** activo, `go run` / `go build` puede fallar con `An Application Control policy has blocked this file`: SAC bloquea por default cualquier binario nuevo sin firma ni reputación conocida, sin importar dónde se compile. Verificalo con:
+
+```powershell
+Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name 'VerifiedAndReputablePolicyState'
+# 1 = enforce (bloquea binarios sin firma/reputación)
+```
+
+Si da `1`, corré el servicio en Docker en vez de nativo — el binario vive dentro del kernel Linux del contenedor y SAC no interviene:
+
+```bash
+docker compose up -d --build   # buildear + levantar
+docker compose logs -f          # ver logs
+docker compose down             # bajar
+```
+
+`docker-compose.yml` conecta el contenedor a la red `core_default`, donde ya corren `core-postgres-1` y `core-redis-1` (por eso usa esos nombres de host en vez de `localhost`).
+
 ---
 
 ## Errores
