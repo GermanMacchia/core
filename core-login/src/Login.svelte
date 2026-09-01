@@ -11,6 +11,7 @@
 		logo_url?: string;
 		primary_color?: string;
 		auth_url?: string;
+		tenant_id?: string;
 	}
 
 	// ── Config reactiva ──────────────────────────────────────────────────
@@ -19,6 +20,7 @@
 	$: logoUrl = cfg.logo_url || new URL('/brand-logo-colored.svg', import.meta.url).href;
 	$: primary = cfg.primary_color ?? '#6366f1';
 	$: authUrl = (cfg.auth_url ?? 'http://localhost:8081').replace(/\/$/, '');
+	$: tenantId = cfg.tenant_id;
 
 	function parseCfg(raw: string): Cfg {
 		try {
@@ -60,7 +62,7 @@
 			const res = await fetch(`${authUrl}/auth/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: email.trim(), password }),
+				body: JSON.stringify({ email: email.trim(), password, tenant_id: tenantId }),
 			});
 			const body = await res.json();
 

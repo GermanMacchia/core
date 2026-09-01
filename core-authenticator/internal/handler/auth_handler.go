@@ -23,6 +23,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		TenantID string `json:"tenant_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		response.BadRequest(w, "invalid request body")
@@ -33,7 +34,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var tenantID *uuid.UUID
+	if body.TenantID != "" {
+		parsed, err := uuid.Parse(body.TenantID)
+		if err != nil {
+			response.BadRequest(w, "invalid tenant_id")
+			return
+		}
+		tenantID = &parsed
+	}
+
 	result, err := h.auth.Login(r.Context(), service.LoginInput{
+		TenantID:  tenantID,
 		Email:     body.Email,
 		Password:  body.Password,
 		UserAgent: r.UserAgent(),

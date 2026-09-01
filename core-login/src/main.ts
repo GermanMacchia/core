@@ -12,11 +12,12 @@ export async function mount(props: Record<string, unknown>): Promise<void> {
       ? (props.domElementGetter as () => Element)()
       : (document.getElementById('shell-content') ?? document.body)
 
-  const tenant = props.tenant as { name?: string; primary_color?: string } | undefined
+  const tenant = props.tenant as { id?: string; name?: string; primary_color?: string } | undefined
   const config = JSON.stringify({
     name:          tenant?.name ?? 'Platform',
     primary_color: tenant?.primary_color,
     auth_url:      props.authApiUrl as string,
+    tenant_id:     tenant?.id,
   })
 
   element = document.createElement('login-mfe')
