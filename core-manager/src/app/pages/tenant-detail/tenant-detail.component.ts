@@ -1,12 +1,14 @@
 import { Component, inject, Input, OnInit, signal } from '@angular/core'
 import { RouterLink } from '@angular/router'
+import { ToastService } from '@germanmacchia/angular-ui'
 import type { Tenant } from '../../core/models/tenant.model'
 import { AdminService } from '../../core/services/admin.service'
 import { TenantOverviewComponent } from './tenant-overview/tenant-overview.component'
 import { TenantPortalsComponent } from './tenant-portals/tenant-portals.component'
+import { TenantServicesComponent } from './tenant-services/tenant-services.component'
 import { TenantUsersComponent } from './tenant-users/tenant-users.component'
 
-type Tab = 'overview' | 'portals' | 'users'
+type Tab = 'overview' | 'portals' | 'services' | 'users'
 
 const STATUS_BADGE: Record<string, string> = {
   active: 'badge-success',
@@ -18,7 +20,7 @@ const STATUS_BADGE: Record<string, string> = {
 @Component({
   selector: 'app-tenant-detail',
   standalone: true,
-  imports: [RouterLink, TenantOverviewComponent, TenantPortalsComponent, TenantUsersComponent],
+  imports: [RouterLink, TenantOverviewComponent, TenantPortalsComponent, TenantServicesComponent, TenantUsersComponent],
   template: `
     <div class="p-6 lg:p-10">
       <div class="mb-2">
@@ -44,6 +46,13 @@ const STATUS_BADGE: Record<string, string> = {
               @if (tenant()!.plan) {
                 <span class="text-xs text-base-content/50">{{ tenant()!.plan!.name }}</span>
               }
+              <button
+                class="text-xs text-base-content/40 hover:text-base-content flex items-center gap-1 cursor-pointer"
+                title="Copiar ID"
+                (click)="copyId()">
+                <i class="bi bi-hash"></i>{{ id }}
+                <i class="bi bi-clipboard"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -69,6 +78,9 @@ const STATUS_BADGE: Record<string, string> = {
         @if (activeTab() === 'portals') {
           <app-tenant-portals [tenantId]="id" />
         }
+        @if (activeTab() === 'services') {
+          <app-tenant-services [tenantId]="id" />
+        }
         @if (activeTab() === 'users') {
           <app-tenant-users [tenantId]="id" />
         }
@@ -80,6 +92,7 @@ export class TenantDetailComponent implements OnInit {
   @Input() id!: string
 
   private admin = inject(AdminService)
+  private toast = inject(ToastService)
 
   tenant = signal<Tenant | null>(null)
   loadingTenant = signal(true)
@@ -88,6 +101,7 @@ export class TenantDetailComponent implements OnInit {
   tabs = [
     { id: 'overview' as Tab, label: 'General', icon: 'bi bi-info-circle' },
     { id: 'portals' as Tab, label: 'Portales', icon: 'bi bi-layout-three-columns' },
+    { id: 'services' as Tab, label: 'Servicios', icon: 'bi bi-grid' },
     { id: 'users' as Tab, label: 'Usuarios', icon: 'bi bi-people' },
   ]
 
@@ -101,6 +115,13 @@ export class TenantDetailComponent implements OnInit {
 
   statusBadge(status: string) {
     return STATUS_BADGE[status] ?? 'badge-ghost'
+  }
+
+  copyId() {
+    navigator.clipboard.writeText(this.id).then(
+      () => this.toast.toast({ severity: 'info', body: 'ID copiado al portapapeles.' }),
+      () => this.toast.toast({ severity: 'error', body: 'No se pudo copiar el ID.' }),
+    )
   }
 
   private loadTenant() {

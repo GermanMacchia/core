@@ -473,3 +473,4 @@ Abrir `https://github.com/tu-usuario/platform` y confirmar:
 | Archivo | Contenido |
 |---|---|
 | `tenant-core-arquitectura.md` | DDL completo de `core_db`, contratos de API REST, estrategia de cache Redis, roadmap |
+| [`sistema-tenants-servicios.md`](./sistema-tenants-servicios.md) | Arquitectura completa del sistema de tenants/servicios: cómo se comunican `core` y `booking`, diagramas de componentes y secuencia, esquema real de `core_db`, y hallazgos/pendientes verificados en código |

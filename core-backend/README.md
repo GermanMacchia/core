@@ -92,8 +92,6 @@ goose -dir migrations postgres "postgres://core_user:<password>@localhost:5432/c
 
 `<password>` es el valor de `DB_PASSWORD` en tu `.env`.
 
-Las migraciones crean: `plans`, `tenants`, `roles`, `services`, `tenant_services`, `users`, `refresh_tokens`, `audit_logs`, `tenant_portals`, `portal_services`, `config_definitions`.
-
 ---
 
 ## 4. Correr la API
@@ -700,23 +698,7 @@ core-backend/
 ├── pkg/
 │   ├── jwt/                     # Solo Verify() — nunca Sign()
 │   └── response/                # Wrappers de respuesta HTTP (JSON, error, list)
-├── migrations/                  # DDL con formato goose
-│   ├── 001_create_plans.sql
-│   ├── 002_create_tenants.sql
-│   ├── 003_create_services.sql
-│   ├── 004_create_tenant_services.sql
-│   ├── 005_create_users.sql
-│   ├── 006_create_refresh_tokens.sql
-│   ├── 007_create_audit_logs.sql
-│   ├── 008_create_tenant_portals.sql       # tenant_portals + portal_services
-│   ├── 009_simplify_tenant.sql             # drop slug de tenants
-│   ├── 010_drop_tenant_services_config_override.sql
-│   ├── 011_drop_services_api_url.sql
-│   ├── 012_drop_tenant_portals_slug.sql
-│   ├── 013_add_users_portal_id.sql
-│   ├── 014_move_slug_to_tenant_services.sql  # slug = ruta de montaje por tenant
-│   ├── 015_create_roles.sql                  # tabla roles + role_id en users
-│   └── 016_create_config_definitions.sql     # registro de keys de config por scope
+├── migrations/                  # DDL con formato goose (ver migrations/*.sql para el detalle)
 ├── docker-compose.yml
 ├── Dockerfile
 └── .env.example

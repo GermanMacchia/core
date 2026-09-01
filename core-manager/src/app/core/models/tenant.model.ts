@@ -75,6 +75,7 @@ export interface Service {
 	description?: string | null
 	config: Record<string, unknown>
 	is_active: boolean
+	requires_instance: boolean
 	created_at: string
 	updated_at: string
 }
@@ -99,6 +100,20 @@ export interface PortalService {
 	mfe_url: string
 	config: Record<string, unknown>
 	sort_order: number
+}
+
+export interface TenantService {
+	id: string // service_id serializado como "id" por el backend
+	name: string
+	mfe_url: string
+	is_enabled: boolean
+	requires_instance: boolean
+	instance?: {
+		id: string
+		name: string
+		slug: string
+		config: Record<string, unknown>
+	}
 }
 
 export interface TenantUser {
@@ -130,5 +145,17 @@ export interface ConfigDefinition {
 	type: 'bool' | 'string' | 'string[]'
 	description?: string | null
 	default_val?: string | null
+}
+
+export interface Faq {
+	id: string
+	question: string
+	answer: string
+	sort_order: number
+	is_active: boolean
+	service_ids: string[]
+	portal_ids: string[]
+	created_at: string
+	updated_at: string
 }
 

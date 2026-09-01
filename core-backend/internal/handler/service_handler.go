@@ -42,6 +42,10 @@ func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if input.Version == "" {
 		input.Version = "1.0.0"
 	}
+	if input.RequiresInstance == nil {
+		t := true
+		input.RequiresInstance = &t
+	}
 
 	svc, err := h.svc.Create(r.Context(), input)
 	if err != nil {

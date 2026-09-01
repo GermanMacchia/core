@@ -9,8 +9,10 @@ import {
 	Service,
 	Portal,
 	PortalService,
+	TenantService,
 	TenantUser,
 	ConfigDefinition,
+	Faq,
 } from '../models/tenant.model'
 
 const CORE_API = 'http://localhost:8080'
@@ -180,6 +182,38 @@ export class AdminService {
 		)
 	}
 
+	// ── Tenant services ──────────────────────────────────────────────────────
+
+	listTenantServices(tenantId: string) {
+		return this.http.get<ApiResponse<TenantService[]>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/services`,
+			{ headers: this.headers },
+		)
+	}
+
+	assignTenantService(tenantId: string, body: { service_id: string }) {
+		return this.http.post<ApiResponse<TenantService>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/services`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	unassignTenantService(tenantId: string, serviceId: string) {
+		return this.http.delete(
+			`${CORE_API}/api/v1/tenants/${tenantId}/services/${serviceId}`,
+			{ headers: this.headers },
+		)
+	}
+
+	updateTenantServiceInstance(tenantId: string, serviceId: string, body: { name?: string; config?: Record<string, unknown> }) {
+		return this.http.patch<ApiResponse<{ id: string; name: string; slug: string; config: Record<string, unknown> }>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/services/${serviceId}/instance`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
 	// ── Services catalog ──────────────────────────────────────────────────────
 
 	listServices(all = true) {
@@ -195,6 +229,7 @@ export class AdminService {
 		description?: string
 		version: string
 		config?: Record<string, unknown>
+		requires_instance: boolean
 	}) {
 		return this.http.post<ApiResponse<Service>>(`${CORE_API}/api/v1/services`, body, {
 			headers: this.headers,
@@ -216,6 +251,7 @@ export class AdminService {
 			description?: string
 			is_active?: boolean
 			config?: Record<string, unknown>
+			requires_instance?: boolean
 		},
 	) {
 		return this.http.patch<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, body, {
@@ -302,6 +338,59 @@ export class AdminService {
 
 	resetCache() {
 		return this.http.post<ApiResponse<{ message: string }>>(`${CORE_API}/api/v1/cache/reset`, {}, {
+			headers: this.headers,
+		})
+	}
+
+	// ── FAQs ──────────────────────────────────────────────────────────────────
+
+	listFaqs(activeOnly = false) {
+		const params = activeOnly ? '?active_only=true' : ''
+		return this.http.get<ApiResponse<Faq[]>>(`${CORE_API}/api/v1/faqs${params}`, {
+			headers: this.headers,
+		})
+	}
+
+	createFaq(body: { question: string; answer: string; sort_order?: number }) {
+		return this.http.post<ApiResponse<Faq>>(`${CORE_API}/api/v1/faqs`, body, {
+			headers: this.headers,
+		})
+	}
+
+	updateFaq(id: string, body: { question?: string; answer?: string; sort_order?: number; is_active?: boolean }) {
+		return this.http.patch<ApiResponse<Faq>>(`${CORE_API}/api/v1/faqs/${id}`, body, {
+			headers: this.headers,
+		})
+	}
+
+	deleteFaq(id: string) {
+		return this.http.delete(`${CORE_API}/api/v1/faqs/${id}`, { headers: this.headers })
+	}
+
+	assignFaqService(faqId: string, serviceId: string) {
+		return this.http.post<ApiResponse<{ faq_id: string; service_id: string }>>(
+			`${CORE_API}/api/v1/faqs/${faqId}/services`,
+			{ service_id: serviceId },
+			{ headers: this.headers },
+		)
+	}
+
+	unassignFaqService(faqId: string, serviceId: string) {
+		return this.http.delete(`${CORE_API}/api/v1/faqs/${faqId}/services/${serviceId}`, {
+			headers: this.headers,
+		})
+	}
+
+	assignFaqPortal(faqId: string, portalId: string) {
+		return this.http.post<ApiResponse<{ faq_id: string; portal_id: string }>>(
+			`${CORE_API}/api/v1/faqs/${faqId}/portals`,
+			{ portal_id: portalId },
+			{ headers: this.headers },
+		)
+	}
+
+	unassignFaqPortal(faqId: string, portalId: string) {
+		return this.http.delete(`${CORE_API}/api/v1/faqs/${faqId}/portals/${portalId}`, {
 			headers: this.headers,
 		})
 	}

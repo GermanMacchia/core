@@ -2,6 +2,7 @@ import { Component, inject, signal, OnInit } from '@angular/core'
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms'
 import {
 	CompactList,
+	CompactListCellDirective,
 	ToastService,
 	InfoModalService,
 } from '@germanmacchia/angular-ui'
@@ -14,7 +15,7 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 @Component({
 	selector: 'app-services',
 	standalone: true,
-	imports: [CompactList, ReactiveFormsModule, ConfigEditorComponent],
+	imports: [CompactList, CompactListCellDirective, ReactiveFormsModule, ConfigEditorComponent],
 	template: `
 		<div class="p-6 lg:p-10 max-w-6xl">
 			<div class="flex items-center justify-between mb-6">
@@ -38,7 +39,17 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 				[trackByKey]="'id'"
 				[booleanTrueLabel]="'Activo'"
 				[booleanFalseLabel]="'Inactivo'"
-				(actionClick)="onAction($event)" />
+				(actionClick)="onAction($event)">
+				<ng-template compactListCell="id" let-item>
+					<button
+						class="text-xs text-base-content/60 hover:text-base-content flex items-center gap-1 cursor-pointer"
+						title="Copiar ID"
+						(click)="copyId(item.id)">
+						{{ item.id }}
+						<i class="bi bi-clipboard"></i>
+					</button>
+				</ng-template>
+			</lib-compact-list>
 		</div>
 
 		<!-- Create Modal -->
@@ -50,21 +61,25 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 				<form [formGroup]="createForm" class="flex flex-col overflow-hidden">
 					<div class="px-6 py-5 flex-1 overflow-y-auto">
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
+							<label class="form-control">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="name" type="text" class="input input-bordered" placeholder="Mi Servicio">
 							</label>
 							<label class="form-control">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Versión <span class="text-error text-xs">*</span></span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Versión <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="version" type="text" class="input input-bordered" placeholder="1.0.0">
 							</label>
 							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">MFE URL <span class="text-error text-xs">*</span></span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">MFE URL <span class="text-error text-xs">*</span></span></div>
 								<input formControlName="mfe_url" type="text" class="input input-bordered" placeholder="http://localhost:4200/remoteEntry.js">
 							</label>
 							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Descripción</span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
 								<textarea formControlName="description" class="textarea textarea-bordered textarea-sm resize-none" rows="2"></textarea>
+							</label>
+							<label class="label cursor-pointer justify-start gap-2 md:col-span-2">
+								<input formControlName="requires_instance" type="checkbox" class="checkbox checkbox-sm">
+								<span class="label-text text-sm font-medium">Requiere negocio</span>
 							</label>
 						</div>
 						<app-config-editor
@@ -90,28 +105,32 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 				<form [formGroup]="editForm" class="flex flex-col overflow-hidden">
 					<div class="px-6 py-5 flex-1 overflow-y-auto">
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Nombre</span></div>
+							<label class="form-control">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre</span></div>
 								<input formControlName="name" type="text" class="input input-bordered" placeholder="Mi Servicio">
 							</label>
 							<label class="form-control">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Versión</span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Versión</span></div>
 								<input formControlName="version" type="text" class="input input-bordered" placeholder="1.0.0">
 							</label>
 							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">MFE URL</span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">MFE URL</span></div>
 								<input formControlName="mfe_url" type="text" class="input input-bordered" placeholder="http://localhost:4200/remoteEntry.js">
 							</label>
 							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Descripción</span></div>
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
 								<textarea formControlName="description" class="textarea textarea-bordered textarea-sm resize-none" rows="2"></textarea>
 							</label>
-							<label class="form-control">
-								<div class="label pt-0 pb-1"><span class="label-text text-sm font-medium">Estado</span></div>
+							<label class="form-control md:col-span-2">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Estado</span></div>
 								<select formControlName="is_active" class="select select-bordered select-sm">
 									<option [ngValue]="true">Activo</option>
 									<option [ngValue]="false">Inactivo</option>
 								</select>
+							</label>
+							<label class="label cursor-pointer justify-start gap-2 md:col-span-2">
+								<input formControlName="requires_instance" type="checkbox" class="checkbox checkbox-sm">
+								<span class="label-text text-sm font-medium">Requiere negocio</span>
 							</label>
 						</div>
 						<app-config-editor
@@ -150,6 +169,7 @@ export class ServicesComponent implements OnInit {
 		version: ['1.0.0', Validators.required],
 		mfe_url: ['', Validators.required],
 		description: [''],
+		requires_instance: [true],
 	})
 
 	editForm = this.fb.group({
@@ -158,14 +178,17 @@ export class ServicesComponent implements OnInit {
 		mfe_url: [''],
 		description: [''],
 		is_active: [true],
+		requires_instance: [true],
 	})
 
 	columns: CompactListColumn<Service>[] = [
+		{ key: 'id', header: 'ID', type: 'custom' },
 		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
 		{ key: 'version', prop: 'version', header: 'Versión', type: 'text' },
 		{ key: 'mfe_url', prop: 'mfe_url', header: 'MFE URL', type: 'text' },
 		{ key: 'description', header: 'Descripción', type: 'text', transform: s => s.description ?? '—' },
 		{ key: 'is_active', prop: 'is_active', header: 'Activo', type: 'boolean' },
+		{ key: 'requires_instance', prop: 'requires_instance', header: 'Requiere negocio', type: 'boolean' },
 	]
 
 	actions: CompactListAction<Service>[] = [
@@ -176,6 +199,13 @@ export class ServicesComponent implements OnInit {
 	ngOnInit() {
 		this.load()
 		this.loadConfigDefs()
+	}
+
+	copyId(id: string) {
+		navigator.clipboard.writeText(id).then(
+			() => this.toast.toast({ severity: 'info', body: 'ID copiado al portapapeles.' }),
+			() => this.toast.toast({ severity: 'error', body: 'No se pudo copiar el ID.' }),
+		)
 	}
 
 	load() {
@@ -211,6 +241,7 @@ export class ServicesComponent implements OnInit {
 				mfe_url: event.item.mfe_url,
 				description: event.item.description ?? '',
 				is_active: event.item.is_active,
+				requires_instance: event.item.requires_instance,
 			})
 			this.editConfigValues.set(existingConfigToValues(event.item.config ?? {}, this.configDefs()))
 			this.showEdit.set(true)
@@ -234,11 +265,12 @@ export class ServicesComponent implements OnInit {
 			mfe_url: v.mfe_url!,
 			...(v.description ? { description: v.description } : {}),
 			config: buildConfigFromValues(this.createConfigValues(), this.configDefs()),
+			requires_instance: v.requires_instance ?? true,
 		}).subscribe({
 			next: res => {
 				this.services.update(list => [res.data, ...list])
 				this.showCreate.set(false)
-				this.createForm.reset({ version: '1.0.0' })
+				this.createForm.reset({ version: '1.0.0', requires_instance: true })
 				this.createConfigValues.set(defaultConfigValues(this.configDefs()))
 				this.toast.toast({ severity: 'success', body: `Servicio "${res.data.name}" creado.` })
 			},
@@ -257,6 +289,7 @@ export class ServicesComponent implements OnInit {
 		if (v.mfe_url) body.mfe_url = v.mfe_url
 		if (v.description !== null) body.description = v.description ?? undefined
 		if (v.is_active !== null) body.is_active = v.is_active!
+		if (v.requires_instance !== null) body.requires_instance = v.requires_instance!
 		body.config = buildConfigFromValues(this.editConfigValues(), this.configDefs())
 
 		this.admin.updateService(this.editTarget.id, body).subscribe({
