@@ -1,5 +1,7 @@
 # Entorno
 .env
+.gga
+.atl
 *.local
 .npmrc
 .claude
