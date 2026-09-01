@@ -2,11 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/tu-org/core-backend/internal/authz"
 	"github.com/tu-org/core-backend/internal/domain"
 	"github.com/tu-org/core-backend/internal/middleware"
 	"github.com/tu-org/core-backend/internal/repository"
@@ -15,12 +18,32 @@ import (
 )
 
 type TenantHandler struct {
-	tenants *service.TenantService
-	portals *repository.PortalRepo
+	tenants        *service.TenantService
+	portals        *repository.PortalRepo
+	access         *repository.UserServiceAccessRepo
+	instances      *repository.ServiceInstanceRepo
+	tenantServices *repository.TenantServiceRepo
 }
 
-func NewTenantHandler(tenants *service.TenantService, portals *repository.PortalRepo) *TenantHandler {
-	return &TenantHandler{tenants: tenants, portals: portals}
+func NewTenantHandler(tenants *service.TenantService, portals *repository.PortalRepo, access *repository.UserServiceAccessRepo, instances *repository.ServiceInstanceRepo, tenantServices *repository.TenantServiceRepo) *TenantHandler {
+	return &TenantHandler{tenants: tenants, portals: portals, access: access, instances: instances, tenantServices: tenantServices}
+}
+
+// callerUserID extracts the authenticated caller's user id from the request
+// context's JWT claims. The JWT still carries the old claims shape (subject
+// = user id) at this point in the rollout; only WHAT is checked against it
+// (the grant table, via authz.CanAccessTenant) is changing here, not how the
+// caller identity itself is obtained.
+func callerUserID(r *http.Request) (uuid.UUID, bool) {
+	claims := middleware.ClaimsFromCtx(r.Context())
+	if claims == nil {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 func (h *TenantHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +86,8 @@ func (h *TenantHandler) Get(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, id) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, id) {
 		middleware.Forbidden(w)
 		return
 	}
@@ -82,7 +106,8 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, id) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, id) {
 		middleware.Forbidden(w)
 		return
 	}
@@ -122,17 +147,119 @@ func (h *TenantHandler) GetServices(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, id) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, id) {
 		middleware.Forbidden(w)
 		return
 	}
 
-	svcs, err := h.portals.ListServicesByTenant(r.Context(), id)
+	svcs, err := h.tenantServices.ListByTenant(r.Context(), id)
 	if err != nil {
 		response.InternalError(w)
 		return
 	}
 	response.JSON(w, http.StatusOK, svcs)
+}
+
+// AssignService adheres a service directly to a tenant, independent of portal
+// delivery.
+//
+//	POST /api/v1/tenants/{id}/services
+func (h *TenantHandler) AssignService(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+
+	var body struct {
+		ServiceID uuid.UUID `json:"service_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+
+	ts, err := h.tenantServices.AssignService(r.Context(), tenantID, body.ServiceID)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusCreated, ts)
+}
+
+// UnassignService removes a tenant's direct adhesion to a service.
+//
+//	DELETE /api/v1/tenants/{id}/services/{service_id}
+func (h *TenantHandler) UnassignService(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	serviceID, err := uuid.Parse(chi.URLParam(r, "service_id"))
+	if err != nil {
+		response.BadRequest(w, "invalid service_id")
+		return
+	}
+
+	if err := h.tenantServices.UnassignService(r.Context(), tenantID, serviceID); err != nil {
+		response.InternalError(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateInstance partially updates the service_instances ("negocio") row
+// backing a tenant's adhesion to a service.
+//
+//	PATCH /api/v1/tenants/{id}/services/{service_id}/instance
+func (h *TenantHandler) UpdateInstance(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	serviceID, err := uuid.Parse(chi.URLParam(r, "service_id"))
+	if err != nil {
+		response.BadRequest(w, "invalid service_id")
+		return
+	}
+
+	var body struct {
+		Name   *string        `json:"name"`
+		Config domain.JSONMap `json:"config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+
+	inst, err := h.tenantServices.UpdateInstance(r.Context(), tenantID, serviceID, body.Name, body.Config)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.Error(w, http.StatusNotFound, "no service instance found for this tenant/service")
+			return
+		}
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusOK, inst)
 }
 
 func (h *TenantHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +268,8 @@ func (h *TenantHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, id) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, id) {
 		middleware.Forbidden(w)
 		return
 	}
@@ -160,7 +288,8 @@ func (h *TenantHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, tenantID) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
 		middleware.Forbidden(w)
 		return
 	}
@@ -190,7 +319,8 @@ func (h *TenantHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, tenantID) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
 		middleware.Forbidden(w)
 		return
 	}
@@ -220,7 +350,8 @@ func (h *TenantHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid tenant id")
 		return
 	}
-	if !allowTenantAccess(r, tenantID) {
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
 		middleware.Forbidden(w)
 		return
 	}
@@ -253,9 +384,10 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type mfeEntry struct {
-		Slug   string `json:"slug"`
-		MFEURL string `json:"mfe_url"`
-		Public bool   `json:"public"`
+		Slug    string `json:"slug"`
+		MFEURL  string `json:"mfe_url"`
+		LogoURL string `json:"logo_url,omitempty"`
+		Public  bool   `json:"public"`
 	}
 	type tenantMeta struct {
 		ID           string `json:"id"`
@@ -275,10 +407,12 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	mfes := make([]mfeEntry, 0, len(svcs))
 	for _, svc := range svcs {
 		isPublic, _ := svc.Config["public"].(bool)
+		logoURL, _ := firstString("logo_url", tenant.Config, svc.Config)
 		mfes = append(mfes, mfeEntry{
-			Slug:   svc.Slug,
-			MFEURL: svc.MFEURL,
-			Public: isPublic,
+			Slug:    svc.Slug,
+			MFEURL:  svc.MFEURL,
+			LogoURL: logoURL,
+			Public:  isPublic,
 		})
 	}
 
@@ -339,14 +473,6 @@ func (h *TenantHandler) Context(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func allowTenantAccess(r *http.Request, tenantID uuid.UUID) bool {
-	claims := middleware.ClaimsFromCtx(r.Context())
-	if claims == nil {
-		return false
-	}
-	return claims.Role == "superadmin" || claims.TenantID == tenantID.String()
-}
-
 func (h *TenantHandler) PublicListByService(w http.ResponseWriter, r *http.Request) {
 	serviceIdentifier := chi.URLParam(r, "service_identifier")
 	if serviceIdentifier == "" {
@@ -360,5 +486,45 @@ func (h *TenantHandler) PublicListByService(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	response.JSON(w, http.StatusOK, tenants)
+}
+
+// PublicListInstancesByService returns the service_instances ("negocios")
+// adhered to the service identified by {service_identifier} (a services.id
+// UUID or a services.name — services.slug was dropped in migrations/014).
+// This is the portal-independent replacement for
+// PublicListByService that booking-backend's SyncTenants repoints at (see
+// plan §2/§5): each item's ID now opaquely holds a service_instances.id
+// instead of a tenants.id. The old .../tenants endpoint stays live alongside
+// this one until booking-backend fully migrates.
+func (h *TenantHandler) PublicListInstancesByService(w http.ResponseWriter, r *http.Request) {
+	serviceIdentifier := chi.URLParam(r, "service_identifier")
+	if serviceIdentifier == "" {
+		response.BadRequest(w, "service_identifier is required")
+		return
+	}
+
+	instances, err := h.instances.ListByService(r.Context(), serviceIdentifier)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+
+	type instanceItem struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Slug   string `json:"slug"`
+		Status string `json:"status"`
+	}
+
+	items := make([]instanceItem, 0, len(instances))
+	for _, inst := range instances {
+		items = append(items, instanceItem{
+			ID:     inst.ID.String(),
+			Name:   inst.Name,
+			Slug:   inst.Slug,
+			Status: string(inst.Status),
+		})
+	}
+	response.JSON(w, http.StatusOK, items)
 }
 

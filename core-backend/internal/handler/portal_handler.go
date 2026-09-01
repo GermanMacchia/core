@@ -6,7 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/tu-org/core-backend/internal/authz"
 	"github.com/tu-org/core-backend/internal/domain"
+	"github.com/tu-org/core-backend/internal/middleware"
 	"github.com/tu-org/core-backend/internal/repository"
 	"github.com/tu-org/core-backend/pkg/response"
 )
@@ -18,6 +20,17 @@ type PortalHandler struct {
 
 func NewPortalHandler(portals *repository.PortalRepo, tenants *repository.TenantRepo) *PortalHandler {
 	return &PortalHandler{portals: portals, tenants: tenants}
+}
+
+// firstString returns the first non-empty string value for key across maps,
+// in the given priority order (first map wins).
+func firstString(key string, maps ...domain.JSONMap) (string, bool) {
+	for _, m := range maps {
+		if v, ok := m[key].(string); ok && v != "" {
+			return v, true
+		}
+	}
+	return "", false
 }
 
 // PublicConfig returns the portal bootstrap payload for the Shell (no auth required).
@@ -66,18 +79,22 @@ func (h *PortalHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"`
 	}
 	type portalOut struct {
-		ID     string         `json:"id"`
-		Name   string         `json:"name"`
-		Config map[string]any `json:"config,omitempty"`
+		ID      string         `json:"id"`
+		Name    string         `json:"name"`
+		LogoURL string         `json:"logo_url,omitempty"`
+		Config  map[string]any `json:"config,omitempty"`
 	}
 	type serviceOut struct {
 		Slug         string   `json:"slug"`
 		MFEURL       string   `json:"mfe_url"`
+		LogoURL      string   `json:"logo_url,omitempty"`
 		AuthAPIURL   string   `json:"auth_api_url,omitempty"`
 		Public       bool     `json:"public"`
 		AllowedRoles []string `json:"allowed_roles,omitempty"`
 		SortOrder    int      `json:"sort_order"`
 	}
+
+	portalLogoURL, _ := firstString("logo_url", tenant.Config, portal.Config)
 
 	svcList := make([]serviceOut, 0, len(services))
 	for _, svc := range services {
@@ -85,6 +102,9 @@ func (h *PortalHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 			Slug:      svc.Slug,
 			MFEURL:    svc.MFEURL,
 			SortOrder: svc.SortOrder,
+		}
+		if v, ok := firstString("logo_url", tenant.Config, portal.Config, svc.Config); ok {
+			out.LogoURL = v
 		}
 		if v, ok := svc.Config["auth_api_url"].(string); ok {
 			out.AuthAPIURL = v
@@ -111,9 +131,10 @@ func (h *PortalHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 			Status: string(tenant.Status),
 		},
 		"portal": portalOut{
-			ID:     portal.ID.String(),
-			Name:   portal.Name,
-			Config: portal.Config,
+			ID:      portal.ID.String(),
+			Name:    portal.Name,
+			LogoURL: portalLogoURL,
+			Config:  portal.Config,
 		},
 		"services": svcList,
 	})
@@ -197,6 +218,11 @@ func (h *PortalHandler) UpdatePortal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !authz.CanAccessPortal(r.Context(), h.portals, portalID) {
+		middleware.Forbidden(w)
+		return
+	}
+
 	var input domain.UpdatePortalInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		response.BadRequest(w, "invalid request body")
@@ -236,6 +262,11 @@ func (h *PortalHandler) AssignService(w http.ResponseWriter, r *http.Request) {
 	portalID, err := uuid.Parse(chi.URLParam(r, "portal_id"))
 	if err != nil {
 		response.BadRequest(w, "invalid portal_id")
+		return
+	}
+
+	if !authz.CanAccessPortal(r.Context(), h.portals, portalID) {
+		middleware.Forbidden(w)
 		return
 	}
 
@@ -281,6 +312,11 @@ func (h *PortalHandler) UnassignService(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !authz.CanAccessPortal(r.Context(), h.portals, portalID) {
+		middleware.Forbidden(w)
+		return
+	}
+
 	if err := h.portals.UnassignService(r.Context(), portalID, serviceID); err != nil {
 		response.InternalError(w)
 		return
@@ -300,6 +336,11 @@ func (h *PortalHandler) UpdatePortalService(w http.ResponseWriter, r *http.Reque
 	serviceID, err := uuid.Parse(chi.URLParam(r, "service_id"))
 	if err != nil {
 		response.BadRequest(w, "invalid service_id")
+		return
+	}
+
+	if !authz.CanAccessPortal(r.Context(), h.portals, portalID) {
+		middleware.Forbidden(w)
 		return
 	}
 

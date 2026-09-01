@@ -59,6 +59,10 @@ func main() {
 	portalRepo := repository.NewPortalRepo(pool)
 	planRepo := repository.NewPlanRepo(pool)
 	configDefinitionRepo := repository.NewConfigDefinitionRepo(pool)
+	faqRepo := repository.NewFaqRepo(pool)
+	userServiceAccessRepo := repository.NewUserServiceAccessRepo(pool)
+	serviceInstanceRepo := repository.NewServiceInstanceRepo(pool)
+	tenantServiceRepo := repository.NewTenantServiceRepo(pool)
 
 	// JWT
 	jwtManager := pkgjwt.NewManager(cfg.JWT.Secret)
@@ -66,14 +70,16 @@ func main() {
 	// Services
 	tenantSvc := service.NewTenantService(tenantRepo, userRepo)
 	serviceSvc := service.NewServiceSvc(serviceRepo)
+	faqSvc := service.NewFaqSvc(faqRepo)
 
 	// Handlers
-	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo)
+	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo, userServiceAccessRepo, serviceInstanceRepo, tenantServiceRepo)
 	serviceHandler := handler.NewServiceHandler(serviceSvc)
 	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo)
 	planHandler := handler.NewPlanHandler(planRepo)
 	configDefinitionHandler := handler.NewConfigDefinitionHandler(configDefinitionRepo)
 	cacheHandler := handler.NewCacheHandler(redisCache)
+	faqHandler := handler.NewFaqHandler(faqSvc, faqRepo)
 
 	// Middleware
 	jwtMW := middleware.NewJWTMiddleware(jwtManager, redisCache)
@@ -109,6 +115,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(serviceAPIKeyMW.Verify)
 		r.Get("/api/v1/public/services/{service_identifier}/tenants", tenantHandler.PublicListByService)
+		r.Get("/api/v1/public/services/{service_identifier}/instances", tenantHandler.PublicListInstancesByService)
 	})
 
 	// Protected routes
@@ -122,6 +129,9 @@ func main() {
 		r.Get("/api/v1/tenants/{id}", tenantHandler.Get)
 		r.Patch("/api/v1/tenants/{id}", tenantHandler.Update)
 		r.Get("/api/v1/tenants/{id}/services", tenantHandler.GetServices)
+		r.Post("/api/v1/tenants/{id}/services", tenantHandler.AssignService)
+		r.Delete("/api/v1/tenants/{id}/services/{service_id}", tenantHandler.UnassignService)
+		r.Patch("/api/v1/tenants/{id}/services/{service_id}/instance", tenantHandler.UpdateInstance)
 		r.Get("/api/v1/tenants/{id}/users", tenantHandler.GetUsers)
 		r.Post("/api/v1/tenants/{id}/users", tenantHandler.CreateUser)
 		r.Patch("/api/v1/tenants/{id}/users/{uid}", tenantHandler.UpdateUser)
@@ -139,6 +149,9 @@ func main() {
 		r.Get("/api/v1/services", serviceHandler.List)
 		r.Get("/api/v1/services/{id}", serviceHandler.Get)
 
+		// FAQs (role-branching inside the handler)
+		r.Get("/api/v1/faqs", faqHandler.List)
+
 		// Plans
 		r.Get("/api/v1/plans", planHandler.List)
 		r.Get("/api/v1/plans/{id}", planHandler.Get)
@@ -151,9 +164,9 @@ func main() {
 		// Portal service management
 		r.Get("/api/v1/portals/{portal_id}/services", portalHandler.GetServicesAuth)
 
-		// Superadmin only
+		// Internal (platform-operator) only
 		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireRole("superadmin"))
+			r.Use(middleware.RequireInternalAccess(userServiceAccessRepo))
 			r.Get("/api/v1/tenants", tenantHandler.List)
 			r.Post("/api/v1/tenants", tenantHandler.Create)
 			r.Delete("/api/v1/tenants/{id}", tenantHandler.Delete)
@@ -176,6 +189,15 @@ func main() {
 
 			// Cache Management
 			r.Post("/api/v1/cache/reset", cacheHandler.Reset)
+
+			// FAQs
+			r.Post("/api/v1/faqs", faqHandler.Create)
+			r.Patch("/api/v1/faqs/{id}", faqHandler.Update)
+			r.Delete("/api/v1/faqs/{id}", faqHandler.Delete)
+			r.Post("/api/v1/faqs/{id}/services", faqHandler.AssignService)
+			r.Delete("/api/v1/faqs/{id}/services/{service_id}", faqHandler.UnassignService)
+			r.Post("/api/v1/faqs/{id}/portals", faqHandler.AssignPortal)
+			r.Delete("/api/v1/faqs/{id}/portals/{portal_id}", faqHandler.UnassignPortal)
 		})
 	})
 
