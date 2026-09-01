@@ -30,6 +30,14 @@ type User struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
+// ResolvedAccess is a fresh, DB-backed user_service_access grant resolved at
+// /auth/validate time — additive to the JWT-derived claims, never replacing
+// them.
+type ResolvedAccess struct {
+	ServiceInstanceID uuid.UUID
+	Role              string
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID  `json:"id"`
 	UserID    uuid.UUID  `json:"user_id"`

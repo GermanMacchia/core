@@ -88,12 +88,11 @@ func (r *AuthRepo) GetTenantStatus(ctx context.Context, tenantID uuid.UUID) (str
 
 func (r *AuthRepo) GetTenantServiceIDs(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT DISTINCT s.id::text
-		FROM portal_services ps
-		JOIN tenant_portals p ON p.id = ps.portal_id
-		JOIN services s       ON s.id = ps.service_id
-		WHERE p.tenant_id   = $1
-		  AND ps.is_enabled = TRUE
+		SELECT s.id::text
+		FROM tenant_services ts
+		JOIN services s ON s.id = ts.service_id
+		WHERE ts.tenant_id  = $1
+		  AND ts.is_enabled = TRUE
 		  AND s.is_active   = TRUE
 	`, tenantID)
 	if err != nil {
@@ -110,6 +109,55 @@ func (r *AuthRepo) GetTenantServiceIDs(ctx context.Context, tenantID uuid.UUID) 
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// ResolveServiceAccess looks up the caller's fresh user_service_access grant
+// for a given service, joining user_service_access -> service_instances ->
+// tenant_services -> roles. When instanceID is nil, it auto-resolves to the
+// caller's sole grant under that service_id (mirroring the N-instance
+// selection default); if the caller has zero or more than one grant under
+// that service_id with no instanceID given, resolution is ambiguous/absent
+// and (nil, nil) is returned — this is a "not resolved" signal, not an
+// error, so /auth/validate can silently omit the additive fields.
+func (r *AuthRepo) ResolveServiceAccess(ctx context.Context, userID, serviceID uuid.UUID, instanceID *uuid.UUID) (*domain.ResolvedAccess, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT usa.service_instance_id, ro.name
+		FROM user_service_access usa
+		JOIN service_instances si ON si.id = usa.service_instance_id
+		JOIN tenant_services ts ON ts.id = si.tenant_service_id
+		JOIN roles ro ON ro.id = usa.role_id
+		WHERE usa.user_id = $1 AND ts.service_id = $2
+	`, userID, serviceID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve service access: %w", err)
+	}
+	defer rows.Close()
+
+	var grants []domain.ResolvedAccess
+	for rows.Next() {
+		var g domain.ResolvedAccess
+		if err := rows.Scan(&g.ServiceInstanceID, &g.Role); err != nil {
+			return nil, fmt.Errorf("resolve service access: %w", err)
+		}
+		grants = append(grants, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("resolve service access: %w", err)
+	}
+
+	if instanceID != nil {
+		for _, g := range grants {
+			if g.ServiceInstanceID == *instanceID {
+				return &g, nil
+			}
+		}
+		return nil, nil
+	}
+
+	if len(grants) == 1 {
+		return &grants[0], nil
+	}
+	return nil, nil
 }
 
 func (r *AuthRepo) UpdateLastLogin(ctx context.Context, id uuid.UUID) error {

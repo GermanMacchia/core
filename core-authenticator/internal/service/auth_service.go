@@ -218,6 +218,15 @@ func (s *AuthService) Validate(tokenStr string) (*pkgjwt.Claims, error) {
 	return s.jwtManager.Parse(tokenStr)
 }
 
+// ResolveServiceAccess resolves a fresh user_service_access grant for the
+// given service/instance. It additively enriches /auth/validate responses
+// and never affects JWT-derived claims. A nil, nil result means "no fresh
+// grant resolved" (missing header, no grant, or ambiguous instance) — not
+// an error.
+func (s *AuthService) ResolveServiceAccess(ctx context.Context, userID, serviceID uuid.UUID, instanceID *uuid.UUID) (*domain.ResolvedAccess, error) {
+	return s.repo.ResolveServiceAccess(ctx, userID, serviceID, instanceID)
+}
+
 func generateSecureToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

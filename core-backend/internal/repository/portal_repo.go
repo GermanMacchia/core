@@ -104,6 +104,20 @@ func (r *PortalRepo) GetByID(ctx context.Context, portalID, tenantID uuid.UUID) 
 	return &p, nil
 }
 
+// GetTenantIDByPortalID resolves the owning tenant for a portal, without
+// requiring the caller to already know the tenant. Used by
+// authz.CanAccessPortal, where portal_id arrives from the URL alone.
+func (r *PortalRepo) GetTenantIDByPortalID(ctx context.Context, portalID uuid.UUID) (uuid.UUID, error) {
+	var tenantID uuid.UUID
+	err := r.db.QueryRow(ctx, `
+		SELECT tenant_id FROM tenant_portals WHERE id = $1
+	`, portalID).Scan(&tenantID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get tenant id by portal id: %w", err)
+	}
+	return tenantID, nil
+}
+
 func (r *PortalRepo) Update(ctx context.Context, portalID uuid.UUID, input domain.UpdatePortalInput) (*domain.Portal, error) {
 	isActive := pgtype.Bool{}
 	if input.IsActive != nil {

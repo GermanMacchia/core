@@ -62,6 +62,7 @@ type UpdatePortalServiceInput struct {
 
 type PortalRepository interface {
 	GetByID(ctx context.Context, portalID, tenantID uuid.UUID) (*Portal, error)
+	GetTenantIDByPortalID(ctx context.Context, portalID uuid.UUID) (uuid.UUID, error)
 	ListAll(ctx context.Context) ([]*Portal, error)
 	ListByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*Portal, error)
 	Create(ctx context.Context, input CreatePortalInput) (*Portal, error)

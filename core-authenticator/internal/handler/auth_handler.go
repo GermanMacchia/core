@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/tu-org/core-authenticator/internal/service"
 	"github.com/tu-org/core-authenticator/pkg/response"
 )
@@ -121,11 +122,34 @@ func (h *AuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"sub":       claims.Subject,
 		"tenant_id": claims.TenantID,
 		"role":      claims.Role,
 		"services":  claims.Services,
 		"exp":       claims.ExpiresAt.Time.Unix(),
-	})
+	}
+
+	// Additive fresh-grant resolution: opt-in via X-Service-ID so existing
+	// callers that don't know about it yet are completely unaffected. Any
+	// failure to resolve (missing/invalid header, no grant, ambiguous
+	// instance) silently leaves these fields out of the response — it never
+	// turns into a request failure, and never distinguishes "no header" from
+	// "no grant" to the caller.
+	if serviceID, err := uuid.Parse(r.Header.Get("X-Service-ID")); err == nil {
+		if userID, err := uuid.Parse(claims.Subject); err == nil {
+			var instanceID *uuid.UUID
+			if raw := r.Header.Get("X-Service-Instance-ID"); raw != "" {
+				if parsed, err := uuid.Parse(raw); err == nil {
+					instanceID = &parsed
+				}
+			}
+			if access, err := h.auth.ResolveServiceAccess(r.Context(), userID, serviceID, instanceID); err == nil && access != nil {
+				body["service_instance_id"] = access.ServiceInstanceID.String()
+				body["resolved_role"] = access.Role
+			}
+		}
+	}
+
+	response.JSON(w, http.StatusOK, body)
 }

@@ -27,7 +27,7 @@ func (r *UserRepo) Create(ctx context.Context, input domain.CreateUserInput) (*d
 	var u domain.User
 	err = r.db.QueryRow(ctx, `
 		INSERT INTO users (tenant_id, portal_id, email, password_hash, role_id)
-		VALUES ($1, $2, $3, $4, (SELECT id FROM roles WHERE name = $5))
+		VALUES ($1, $2, $3, $4, (SELECT id FROM roles WHERE name = $5 AND service_id IS NULL))
 		RETURNING id, tenant_id, portal_id, email, password_hash,
 		          role_id, (SELECT name FROM roles WHERE id = role_id),
 		          is_active, last_login_at, created_at, updated_at
@@ -89,7 +89,7 @@ func (r *UserRepo) Update(ctx context.Context, id uuid.UUID, input domain.Update
 	err := r.db.QueryRow(ctx, `
 		UPDATE users SET
 			portal_id  = COALESCE($2, portal_id),
-			role_id    = COALESCE((SELECT id FROM roles WHERE name = $3), role_id),
+			role_id    = COALESCE((SELECT id FROM roles WHERE name = $3 AND service_id IS NULL), role_id),
 			is_active  = COALESCE($4, is_active),
 			updated_at = NOW()
 		WHERE id = $1
