@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,6 +63,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 		user, err = s.repo.GetByEmailGlobal(ctx, input.Email)
 	}
 	if err != nil {
+		log.Printf("auth: login lookup failed for %q: %v", input.Email, err)
 		return nil, ErrInvalidCredentials
 	}
 
@@ -75,12 +77,15 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+		log.Printf("auth: password mismatch for %q", input.Email)
 		return nil, ErrInvalidCredentials
 	}
 
 	// El claim services refleja la suscripción del tenant para todos los
-	// roles, superadmin incluido: los servicios validan contra este claim.
-	services, _ := s.repo.GetTenantServiceIDs(ctx, user.TenantID)
+	// roles, superadmin incluido: los servicios validan contra este claim —
+	// salvo que el usuario tenga restrict_services=TRUE, en cuyo caso se
+	// acota a sus grants en user_service_access (ver resolveServices).
+	services, _ := s.resolveServices(ctx, user)
 
 	expAt := time.Now().Add(s.cfg.AccessTokenDuration())
 	accessToken, err := s.jwtManager.GenerateAccess(
@@ -154,7 +159,7 @@ func (s *AuthService) Refresh(ctx context.Context, rawToken, userAgent, ip strin
 		return nil, err
 	}
 
-	services, _ := s.repo.GetTenantServiceIDs(ctx, user.TenantID)
+	services, _ := s.resolveServices(ctx, user)
 
 	expAt := time.Now().Add(s.cfg.AccessTokenDuration())
 	accessToken, err := s.jwtManager.GenerateAccess(
@@ -216,6 +221,20 @@ func (s *AuthService) Logout(ctx context.Context, rawToken string) error {
 // Validate parses and validates a JWT, returning its claims.
 func (s *AuthService) Validate(tokenStr string) (*pkgjwt.Claims, error) {
 	return s.jwtManager.Parse(tokenStr)
+}
+
+// resolveServices returns the service ids that belong in the JWT's services
+// claim for user: when user.RestrictServices is TRUE it is scoped to the
+// user's own user_service_access grants (AuthRepo.GetGrantedServiceIDs);
+// otherwise it is unchanged current behavior — every service the tenant is
+// adhered to (AuthRepo.GetTenantServiceIDs). See
+// core-backend/migrations/034_add_restrict_services_to_users.sql for why
+// this is an explicit opt-in flag rather than an implicit fallback.
+func (s *AuthService) resolveServices(ctx context.Context, user *domain.User) ([]string, error) {
+	if user.RestrictServices {
+		return s.repo.GetGrantedServiceIDs(ctx, user.ID, user.TenantID)
+	}
+	return s.repo.GetTenantServiceIDs(ctx, user.TenantID)
 }
 
 // ResolveServiceAccess resolves a fresh user_service_access grant for the

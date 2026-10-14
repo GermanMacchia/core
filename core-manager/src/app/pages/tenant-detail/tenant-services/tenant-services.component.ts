@@ -1,4 +1,5 @@
-import { Component, computed, inject, Input, OnInit, signal } from '@angular/core'
+import { Component, computed, inject, input, type OnInit, signal } from '@angular/core'
+import type { HttpErrorResponse } from '@angular/common/http'
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms'
 import type { CompactListAction, CompactListColumn, FormField } from '@germanmacchia/angular-ui'
 import {
@@ -9,6 +10,7 @@ import {
 } from '@germanmacchia/angular-ui'
 import type { Service, TenantService } from '../../../core/models/tenant.model'
 import { AdminService } from '../../../core/services/admin.service'
+import { apiErrorMessage } from '../../../core/utils/api-error'
 
 @Component({
   selector: 'app-tenant-services',
@@ -51,7 +53,7 @@ import { AdminService } from '../../../core/services/admin.service'
   `,
 })
 export class TenantServicesComponent implements OnInit {
-  @Input() tenantId!: string
+  readonly tenantId = input.required<string>()
 
   private admin = inject(AdminService)
   private fb = inject(FormBuilder)
@@ -60,17 +62,22 @@ export class TenantServicesComponent implements OnInit {
 
   services = signal<TenantService[]>([])
   loadingServices = signal(false)
+  // lib-form exposes no disabled/loading input, so this guards the submit
+  // handlers against double submission instead of disabling the button.
+  saving = signal(false)
   showAssignService = signal(false)
   showEditInstance = signal(false)
   catalog = signal<Service[]>([])
   private editInstanceTarget: TenantService | null = null
 
-  assignServiceForm = this.fb.group({
+  assignServiceForm = this.fb.nonNullable.group({
     service_id: ['', Validators.required],
   })
 
-  editInstanceForm = this.fb.group({
+  editInstanceForm = this.fb.nonNullable.group({
     name: ['', Validators.required],
+    // Mirrors slugutil.Valid in core-backend.
+    slug: ['', [Validators.required, Validators.maxLength(100), Validators.pattern(/^[a-z0-9]+(-[a-z0-9]+)*$/)]],
     logo_url: [''],
   })
 
@@ -86,6 +93,7 @@ export class TenantServicesComponent implements OnInit {
 
   editInstanceFields: FormField[] = [
     { name: 'name', label: 'Nombre', type: 'text', required: true },
+    { name: 'slug', label: 'Slug (URL pública)', type: 'text', required: true, placeholder: 'mi-negocio' },
     { name: 'logo_url', label: 'Logo (URL)', type: 'text', placeholder: 'https://...' },
   ]
 
@@ -93,6 +101,7 @@ export class TenantServicesComponent implements OnInit {
     { key: 'name', prop: 'name', header: 'Servicio', type: 'text' },
     { key: 'mfe_url', prop: 'mfe_url', header: 'MFE URL', type: 'text' },
     { key: 'instance', header: 'Negocio', type: 'text', transform: s => s.instance?.name ?? '—' },
+    { key: 'slug', header: 'Slug', type: 'text', transform: s => s.instance?.slug ?? '—' },
   ]
 
   serviceActions: CompactListAction<TenantService>[] = [
@@ -111,10 +120,12 @@ export class TenantServicesComponent implements OnInit {
   }
 
   onAssignService() {
-    if (this.assignServiceForm.invalid) return
+    if (this.assignServiceForm.invalid || this.saving()) return
     const v = this.assignServiceForm.getRawValue()
-    this.admin.assignTenantService(this.tenantId, { service_id: v.service_id! }).subscribe({
+    this.saving.set(true)
+    this.admin.assignTenantService(this.tenantId(), { service_id: v.service_id }).subscribe({
       next: res => {
+        this.saving.set(false)
         this.services.update(list => {
           const idx = list.findIndex(s => s.id === res.data.id)
           return idx >= 0 ? list.map((s, i) => (i === idx ? res.data : s)) : [...list, res.data]
@@ -122,8 +133,9 @@ export class TenantServicesComponent implements OnInit {
         this.showAssignService.set(false)
         this.toast.toast({ severity: 'success', body: 'Servicio asociado al tenant.' })
       },
-      error: err => {
-        this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al asociar el servicio.' })
+      error: (err: HttpErrorResponse) => {
+        this.saving.set(false)
+        this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al asociar el servicio.') })
       },
     })
   }
@@ -140,9 +152,11 @@ export class TenantServicesComponent implements OnInit {
         return
       }
       this.editInstanceTarget = event.item
+      const logoUrl = event.item.instance.config?.['logo_url']
       this.editInstanceForm.reset({
         name: event.item.instance.name,
-        logo_url: (event.item.instance.config?.['logo_url'] as string) ?? '',
+        slug: event.item.instance.slug,
+        logo_url: typeof logoUrl === 'string' ? logoUrl : '',
       })
       this.showEditInstance.set(true)
     }
@@ -150,13 +164,34 @@ export class TenantServicesComponent implements OnInit {
 
   onUpdateInstance() {
     const target = this.editInstanceTarget
-    if (!target || this.editInstanceForm.invalid) return
+    if (!target || this.editInstanceForm.invalid || this.saving()) return
+    const slug = this.editInstanceForm.getRawValue().slug
+    const slugChanged = slug !== target.instance?.slug
+
+    // The slug is the business's public URL; changing it breaks every link
+    // already shared, so ask before sending it.
+    if (slugChanged) {
+      this.infoModal.openAsConfirm(
+        () => this.saveInstance(target, slug),
+        `Cambiar el slug a "${slug}" rompe los links y QR que ya usen "${target.instance?.slug}". ¿Continuar?`,
+      )
+      return
+    }
+    this.saveInstance(target)
+  }
+
+  private saveInstance(target: TenantService, slug?: string) {
     const v = this.editInstanceForm.getRawValue()
-    this.admin.updateTenantServiceInstance(this.tenantId, target.id, {
-      name: v.name!,
+    this.saving.set(true)
+    // core-backend shallow-merges `config` into the existing instance config
+    // (jsonb ||), so sending only logo_url keeps the other keys intact.
+    this.admin.updateTenantServiceInstance(this.tenantId(), target.id, {
+      name: v.name,
+      slug,
       config: { logo_url: v.logo_url || undefined },
     }).subscribe({
       next: res => {
+        this.saving.set(false)
         this.services.update(list =>
           list.map(s => (s.id === target.id ? { ...s, instance: res.data } : s)),
         )
@@ -164,35 +199,48 @@ export class TenantServicesComponent implements OnInit {
         this.editInstanceTarget = null
         this.toast.toast({ severity: 'success', body: 'Negocio actualizado.' })
       },
-      error: err => {
-        this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al actualizar el negocio.' })
+      error: (err: HttpErrorResponse) => {
+        this.saving.set(false)
+        this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al actualizar el negocio.') })
       },
     })
   }
 
   private loadServices() {
     this.loadingServices.set(true)
-    this.admin.listTenantServices(this.tenantId).subscribe({
+    this.admin.listTenantServices(this.tenantId()).subscribe({
       next: res => {
         this.services.set(res.data ?? [])
         this.loadingServices.set(false)
       },
-      error: () => this.loadingServices.set(false),
+      error: (err: HttpErrorResponse) => {
+        this.loadingServices.set(false)
+        this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al cargar los servicios del tenant.') })
+      },
     })
   }
 
   private loadCatalog() {
-    this.admin.listServices(true).subscribe({ next: res => this.catalog.set(res.data ?? []) })
+    this.admin.listServices(true).subscribe({
+      next: res => this.catalog.set(res.data ?? []),
+      error: (err: HttpErrorResponse) => {
+        this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al cargar el catálogo de servicios.') })
+      },
+    })
   }
 
   private doUnassign(svc: TenantService) {
-    this.admin.unassignTenantService(this.tenantId, svc.id).subscribe({
+    if (this.saving()) return
+    this.saving.set(true)
+    this.admin.unassignTenantService(this.tenantId(), svc.id).subscribe({
       next: () => {
+        this.saving.set(false)
         this.services.update(list => list.filter(s => s.id !== svc.id))
         this.toast.toast({ severity: 'success', body: `Servicio "${svc.name}" desasociado.` })
       },
-      error: () => {
-        this.toast.toast({ severity: 'error', body: 'Error al desasociar el servicio.' })
+      error: (err: HttpErrorResponse) => {
+        this.saving.set(false)
+        this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al desasociar el servicio.') })
       },
     })
   }

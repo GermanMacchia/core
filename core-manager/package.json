@@ -9,7 +9,7 @@
 		"test": "ng test",
 		"format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
 		"single-spa:serve": "vite serve --config vite.single-spa.config.ts",
-		"single-spa:serve:static": "concurrently \"vite build --config vite.single-spa.config.ts --watch\" \"serve dist-spa --cors -l 4201\"",
+		"single-spa:serve:static": "concurrently \"vite build --config vite.single-spa.config.ts --watch\" \"serve dist-spa --cors -l 4200\"",
 		"single-spa:build": "vite build --config vite.single-spa.config.ts"
 	},
 	"private": true,

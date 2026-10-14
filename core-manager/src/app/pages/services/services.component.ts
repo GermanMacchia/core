@@ -1,4 +1,5 @@
-import { Component, inject, signal, OnInit } from '@angular/core'
+import { Component, inject, signal, type OnInit } from '@angular/core'
+import type { HttpErrorResponse } from '@angular/common/http'
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms'
 import {
 	CompactList,
@@ -8,7 +9,8 @@ import {
 } from '@germanmacchia/angular-ui'
 import type { CompactListColumn, CompactListAction } from '@germanmacchia/angular-ui'
 import { AdminService } from '../../core/services/admin.service'
-import { ConfigDefinition, Service } from '../../core/models/tenant.model'
+import type { ConfigDefinition, RoleOption, Service } from '../../core/models/tenant.model'
+import { apiErrorMessage } from '../../core/utils/api-error'
 import { ConfigEditorComponent } from '../../shared/config-editor.component'
 import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } from '../../shared/config-fields'
 
@@ -89,7 +91,10 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 					</div>
 					<div class="px-6 py-4 border-t border-base-200 flex justify-end gap-2">
 						<button type="button" class="btn btn-ghost btn-sm" (click)="showCreate.set(false)">Cancelar</button>
-						<button type="button" class="btn btn-primary btn-sm" (click)="onCreate()">Crear</button>
+						<button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="onCreate()">
+							@if (saving()) { <span class="loading loading-spinner loading-xs"></span> }
+							Crear
+						</button>
 					</div>
 				</form>
 			</div>
@@ -140,11 +145,66 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 					</div>
 					<div class="px-6 py-4 border-t border-base-200 flex justify-end gap-2">
 						<button type="button" class="btn btn-ghost btn-sm" (click)="showEdit.set(false)">Cancelar</button>
-						<button type="button" class="btn btn-primary btn-sm" (click)="onUpdate()">Guardar</button>
+						<button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="onUpdate()">
+							@if (saving()) { <span class="loading loading-spinner loading-xs"></span> }
+							Guardar
+						</button>
 					</div>
 				</form>
 			</div>
 			<form method="dialog" class="modal-backdrop" (click)="showEdit.set(false)"><button>close</button></form>
+		</dialog>
+
+		<!-- Roles Modal -->
+		<dialog class="modal" [class.modal-open]="showRoles()">
+			<div class="modal-box w-11/12 max-w-2xl flex flex-col p-0 max-h-[90vh]">
+				<div class="px-6 py-4 border-b border-base-200 flex items-center justify-between">
+					<h3 class="font-semibold text-lg">Roles de "{{ rolesTarget()?.name }}"</h3>
+					<button type="button" class="btn btn-ghost btn-sm btn-circle" (click)="closeRoles()">
+						<i class="bi bi-x-lg"></i>
+					</button>
+				</div>
+				<div class="px-6 py-5 flex-1 overflow-y-auto">
+					<lib-compact-list
+						[items]="roles()"
+						[columns]="roleColumns"
+						[actions]="roleActions"
+						[loading]="rolesLoading()"
+						[emptyIcon]="'bi bi-person-badge'"
+						[emptyMessage]="'Sin roles para este servicio'"
+						[pageSize]="10"
+						[trackByKey]="'id'"
+						(actionClick)="onRoleAction($event)">
+					</lib-compact-list>
+
+					<form [formGroup]="roleForm" class="mt-5 pt-5 border-t border-base-200">
+						<h4 class="text-sm font-medium mb-3">{{ editingRole() ? 'Editar rol' : 'Nuevo rol' }}</h4>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+							<label class="form-control">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre <span class="text-error text-xs">*</span></span></div>
+								<input formControlName="name" type="text" class="input input-bordered input-sm" placeholder="Admin">
+							</label>
+							<label class="form-control">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
+								<input formControlName="description" type="text" class="input input-bordered input-sm" placeholder="Opcional">
+							</label>
+						</div>
+						<div class="flex justify-end gap-2 mt-4">
+							@if (editingRole()) {
+								<button type="button" class="btn btn-ghost btn-sm" (click)="cancelRoleEdit()">Cancelar</button>
+							}
+							<button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="onSaveRole()">
+								@if (saving()) { <span class="loading loading-spinner loading-xs"></span> }
+								{{ editingRole() ? 'Guardar' : 'Crear' }}
+							</button>
+						</div>
+					</form>
+				</div>
+				<div class="px-6 py-4 border-t border-base-200 flex justify-end gap-2">
+					<button type="button" class="btn btn-ghost btn-sm" (click)="closeRoles()">Cerrar</button>
+				</div>
+			</div>
+			<form method="dialog" class="modal-backdrop" (click)="closeRoles()"><button>close</button></form>
 		</dialog>
 	`,
 })
@@ -156,15 +216,22 @@ export class ServicesComponent implements OnInit {
 
 	services = signal<Service[]>([])
 	loading = signal(true)
+	saving = signal(false)
 	showCreate = signal(false)
 	showEdit = signal(false)
 	private editTarget: Service | null = null
+
+	showRoles = signal(false)
+	rolesTarget = signal<Service | null>(null)
+	roles = signal<RoleOption[]>([])
+	rolesLoading = signal(false)
+	editingRole = signal<RoleOption | null>(null)
 
 	configDefs = signal<ConfigDefinition[]>([])
 	createConfigValues = signal<Record<string, string>>({})
 	editConfigValues = signal<Record<string, string>>({})
 
-	createForm = this.fb.group({
+	createForm = this.fb.nonNullable.group({
 		name: ['', Validators.required],
 		version: ['1.0.0', Validators.required],
 		mfe_url: ['', Validators.required],
@@ -172,13 +239,18 @@ export class ServicesComponent implements OnInit {
 		requires_instance: [true],
 	})
 
-	editForm = this.fb.group({
+	editForm = this.fb.nonNullable.group({
 		name: [''],
 		version: [''],
 		mfe_url: [''],
 		description: [''],
 		is_active: [true],
 		requires_instance: [true],
+	})
+
+	roleForm = this.fb.nonNullable.group({
+		name: ['', Validators.required],
+		description: [''],
 	})
 
 	columns: CompactListColumn<Service>[] = [
@@ -192,6 +264,17 @@ export class ServicesComponent implements OnInit {
 	]
 
 	actions: CompactListAction<Service>[] = [
+		{ id: 'roles', icon: 'bi bi-person-badge', tooltip: 'Roles' },
+		{ id: 'edit', icon: 'bi bi-pencil', tooltip: 'Editar' },
+		{ id: 'delete', icon: 'bi bi-trash', tooltip: 'Eliminar', class: 'text-error' },
+	]
+
+	roleColumns: CompactListColumn<RoleOption>[] = [
+		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
+		{ key: 'description', header: 'Descripción', type: 'text', transform: r => r.description ?? '—' },
+	]
+
+	roleActions: CompactListAction<RoleOption>[] = [
 		{ id: 'edit', icon: 'bi bi-pencil', tooltip: 'Editar' },
 		{ id: 'delete', icon: 'bi bi-trash', tooltip: 'Eliminar', class: 'text-error' },
 	]
@@ -215,8 +298,8 @@ export class ServicesComponent implements OnInit {
 				this.services.set(res.data ?? [])
 				this.loading.set(false)
 			},
-			error: () => {
-				this.toast.toast({ severity: 'error', body: 'Error al cargar los servicios.' })
+			error: (err: HttpErrorResponse) => {
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al cargar los servicios.') })
 				this.loading.set(false)
 			},
 		})
@@ -229,11 +312,16 @@ export class ServicesComponent implements OnInit {
 				this.configDefs.set(defs)
 				this.createConfigValues.set(defaultConfigValues(defs))
 			},
+			error: (err: HttpErrorResponse) => {
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al cargar las definiciones de configuración.') })
+			},
 		})
 	}
 
 	onAction(event: { action: string; item: Service }) {
-		if (event.action === 'edit') {
+		if (event.action === 'roles') {
+			this.openRoles(event.item)
+		} else if (event.action === 'edit') {
 			this.editTarget = event.item
 			this.editForm.patchValue({
 				name: event.item.name,
@@ -258,61 +346,194 @@ export class ServicesComponent implements OnInit {
 			this.toast.toast({ severity: 'warning', body: 'Completá los campos requeridos.' })
 			return
 		}
+		if (this.saving()) return
 		const v = this.createForm.getRawValue()
+		this.saving.set(true)
 		this.admin.createService({
-			name: v.name!,
-			version: v.version!,
-			mfe_url: v.mfe_url!,
+			name: v.name,
+			version: v.version,
+			mfe_url: v.mfe_url,
 			...(v.description ? { description: v.description } : {}),
 			config: buildConfigFromValues(this.createConfigValues(), this.configDefs()),
-			requires_instance: v.requires_instance ?? true,
+			requires_instance: v.requires_instance,
 		}).subscribe({
 			next: res => {
+				this.saving.set(false)
 				this.services.update(list => [res.data, ...list])
 				this.showCreate.set(false)
-				this.createForm.reset({ version: '1.0.0', requires_instance: true })
+				this.createForm.reset()
 				this.createConfigValues.set(defaultConfigValues(this.configDefs()))
 				this.toast.toast({ severity: 'success', body: `Servicio "${res.data.name}" creado.` })
 			},
-			error: err => {
-				this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al crear el servicio.' })
+			error: (err: HttpErrorResponse) => {
+				this.saving.set(false)
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al crear el servicio.') })
 			},
 		})
 	}
 
 	onUpdate() {
-		if (!this.editTarget) return
+		if (!this.editTarget || this.saving()) return
 		const v = this.editForm.getRawValue()
-		const body: Parameters<AdminService['updateService']>[1] = {}
+		const body: Parameters<AdminService['updateService']>[1] = {
+			description: v.description,
+			is_active: v.is_active,
+			requires_instance: v.requires_instance,
+			config: buildConfigFromValues(this.editConfigValues(), this.configDefs()),
+		}
 		if (v.name) body.name = v.name
 		if (v.version) body.version = v.version
 		if (v.mfe_url) body.mfe_url = v.mfe_url
-		if (v.description !== null) body.description = v.description ?? undefined
-		if (v.is_active !== null) body.is_active = v.is_active!
-		if (v.requires_instance !== null) body.requires_instance = v.requires_instance!
-		body.config = buildConfigFromValues(this.editConfigValues(), this.configDefs())
 
+		this.saving.set(true)
 		this.admin.updateService(this.editTarget.id, body).subscribe({
 			next: res => {
+				this.saving.set(false)
 				this.services.update(list => list.map(s => s.id === res.data.id ? res.data : s))
 				this.showEdit.set(false)
 				this.editTarget = null
 				this.toast.toast({ severity: 'success', body: `Servicio "${res.data.name}" actualizado.` })
 			},
-			error: err => {
-				this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al actualizar el servicio.' })
+			error: (err: HttpErrorResponse) => {
+				this.saving.set(false)
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al actualizar el servicio.') })
 			},
 		})
 	}
 
 	private doDelete(svc: Service) {
+		if (this.saving()) return
+		this.saving.set(true)
 		this.admin.deleteService(svc.id).subscribe({
 			next: () => {
+				this.saving.set(false)
 				this.services.update(list => list.filter(s => s.id !== svc.id))
 				this.toast.toast({ severity: 'success', body: `Servicio "${svc.name}" eliminado.` })
 			},
-			error: () => {
-				this.toast.toast({ severity: 'error', body: 'Error al eliminar el servicio.' })
+			error: (err: HttpErrorResponse) => {
+				this.saving.set(false)
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al eliminar el servicio.') })
+			},
+		})
+	}
+
+	openRoles(svc: Service) {
+		this.rolesTarget.set(svc)
+		this.editingRole.set(null)
+		this.roleForm.reset()
+		this.showRoles.set(true)
+		this.loadRoles()
+	}
+
+	closeRoles() {
+		this.showRoles.set(false)
+		this.rolesTarget.set(null)
+		this.roles.set([])
+		this.editingRole.set(null)
+		this.roleForm.reset()
+	}
+
+	loadRoles() {
+		const target = this.rolesTarget()
+		if (!target) return
+		this.rolesLoading.set(true)
+		this.admin.listRolesByService(target.id).subscribe({
+			next: res => {
+				this.roles.set(res.data ?? [])
+				this.rolesLoading.set(false)
+			},
+			error: (err: HttpErrorResponse) => {
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al cargar los roles.') })
+				this.rolesLoading.set(false)
+			},
+		})
+	}
+
+	onRoleAction(event: { action: string; item: RoleOption }) {
+		if (event.action === 'edit') {
+			this.editingRole.set(event.item)
+			this.roleForm.setValue({
+				name: event.item.name,
+				description: event.item.description ?? '',
+			})
+		} else if (event.action === 'delete') {
+			this.infoModal.openAsConfirm(
+				() => this.doDeleteRole(event.item),
+				`¿Eliminar el rol "${event.item.name}"?`,
+			)
+		}
+	}
+
+	cancelRoleEdit() {
+		this.editingRole.set(null)
+		this.roleForm.reset()
+	}
+
+	onSaveRole() {
+		if (this.roleForm.invalid) {
+			this.toast.toast({ severity: 'warning', body: 'El nombre del rol es obligatorio.' })
+			return
+		}
+		if (this.saving()) return
+		const v = this.roleForm.getRawValue()
+		const editing = this.editingRole()
+
+		if (editing) {
+			this.saving.set(true)
+			this.admin.updateRole(editing.id, {
+				name: v.name || undefined,
+				description: v.description ? v.description : undefined,
+			}).subscribe({
+				next: res => {
+					this.saving.set(false)
+					this.roles.update(list => list.map(r => (r.id === res.data.id ? res.data : r)))
+					this.cancelRoleEdit()
+					this.toast.toast({ severity: 'success', body: `Rol "${res.data.name}" actualizado.` })
+				},
+				error: (err: HttpErrorResponse) => {
+					this.saving.set(false)
+					this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al actualizar el rol.') })
+				},
+			})
+			return
+		}
+
+		const target = this.rolesTarget()
+		if (!target) return
+		this.saving.set(true)
+		this.admin.createRole(target.id, {
+			name: v.name,
+			...(v.description ? { description: v.description } : {}),
+		}).subscribe({
+			next: res => {
+				this.saving.set(false)
+				this.roles.update(list => [...list, res.data])
+				this.roleForm.reset()
+				this.toast.toast({ severity: 'success', body: `Rol "${res.data.name}" creado.` })
+			},
+			error: (err: HttpErrorResponse) => {
+				this.saving.set(false)
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al crear el rol.') })
+			},
+		})
+	}
+
+	private doDeleteRole(role: RoleOption) {
+		if (this.saving()) return
+		this.saving.set(true)
+		this.admin.deleteRole(role.id).subscribe({
+			next: () => {
+				this.saving.set(false)
+				this.roles.update(list => list.filter(r => r.id !== role.id))
+				if (this.editingRole()?.id === role.id) this.cancelRoleEdit()
+				this.toast.toast({ severity: 'success', body: `Rol "${role.name}" eliminado.` })
+			},
+			error: (err: HttpErrorResponse) => {
+				this.saving.set(false)
+				const msg = err.status === 409
+					? `El rol "${role.name}" está en uso y no se puede eliminar.`
+					: apiErrorMessage(err, 'Error al eliminar el rol.')
+				this.toast.toast({ severity: 'error', body: msg })
 			},
 		})
 	}

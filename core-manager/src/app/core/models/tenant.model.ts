@@ -1,23 +1,3 @@
-export interface MfeEntry {
-	slug: string
-	mfe_url: string
-	public: boolean
-}
-
-export interface TenantMeta {
-	slug: string
-	name: string
-	logo_url?: string
-	primary_color?: string
-}
-
-export interface TenantConfig {
-	tenant: TenantMeta
-	auth_mfe_url: string
-	auth_api_url?: string
-	mfes: MfeEntry[]
-}
-
 export interface AuthUser {
 	id: string
 	email: string
@@ -102,18 +82,20 @@ export interface PortalService {
 	sort_order: number
 }
 
+export interface ServiceInstance {
+	id: string
+	name: string
+	slug: string
+	config: Record<string, unknown>
+}
+
 export interface TenantService {
 	id: string // service_id serializado como "id" por el backend
 	name: string
 	mfe_url: string
 	is_enabled: boolean
 	requires_instance: boolean
-	instance?: {
-		id: string
-		name: string
-		slug: string
-		config: Record<string, unknown>
-	}
+	instance?: ServiceInstance
 }
 
 export interface TenantUser {
@@ -123,9 +105,29 @@ export interface TenantUser {
 	email: string
 	role: 'superadmin' | 'admin' | 'member' | 'viewer'
 	is_active: boolean
+	restrict_services: boolean
 	last_login_at?: string | null
 	created_at: string
 	updated_at: string
+}
+
+export interface ServiceAccessGrant {
+	id: string
+	user_id: string
+	service_instance_id: string
+	service_instance_name: string
+	service_id: string
+	service_name: string
+	role_id: string
+	role_name: string
+	created_at: string
+}
+
+export interface RoleOption {
+	id: string
+	name: string
+	description?: string | null
+	service_id: string
 }
 
 export interface PlanServicePricing {

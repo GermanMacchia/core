@@ -32,6 +32,7 @@ type tenantServicePair struct {
 
 type pendingInstance struct {
 	tenantServiceID uuid.UUID
+	serviceID       uuid.UUID
 	tenantName      string
 }
 
@@ -105,7 +106,7 @@ func main() {
 	// have one yet, named/slugged after the tenant (today's reality: tenant
 	// IS the business, 1:1).
 	instRows, err := tx.Query(ctx, `
-		SELECT ts.id, t.name
+		SELECT ts.id, ts.service_id, t.name
 		FROM tenant_services ts
 		JOIN tenants t ON t.id = ts.tenant_id
 		LEFT JOIN service_instances si ON si.tenant_service_id = ts.id
@@ -118,7 +119,7 @@ func main() {
 	var pending []pendingInstance
 	for instRows.Next() {
 		var p pendingInstance
-		if err := instRows.Scan(&p.tenantServiceID, &p.tenantName); err != nil {
+		if err := instRows.Scan(&p.tenantServiceID, &p.serviceID, &p.tenantName); err != nil {
 			instRows.Close()
 			logger.Fatal("scan pending instance", zap.Error(err))
 		}
@@ -131,18 +132,33 @@ func main() {
 
 	instanceCount := 0
 	for _, p := range pending {
-		slug := slugutil.Slugify(p.tenantName)
-		if slug == "" {
+		base := slugutil.Slugify(p.tenantName)
+		if base == "" {
 			// Degenerate tenant name (e.g. all punctuation/diacritics-only):
 			// fall back to a stable, still-unique-enough identifier instead
 			// of writing an empty slug.
-			slug = "tenant-" + p.tenantServiceID.String()[:8]
+			base = "tenant-" + p.tenantServiceID.String()[:8]
+		}
+
+		// Slugs are unique per service (migrations/035): two tenants with the
+		// same name adhering to the same service get -2, -3, ...
+		slug, err := slugutil.Unique(base, func(candidate string) (bool, error) {
+			var exists bool
+			err := tx.QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM service_instances WHERE service_id = $1 AND slug = $2)
+			`, p.serviceID, candidate).Scan(&exists)
+			return exists, err
+		})
+		if err != nil {
+			logger.Fatal("resolve unique instance slug",
+				zap.Stringer("tenant_service_id", p.tenantServiceID),
+				zap.Error(err))
 		}
 
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO service_instances (tenant_service_id, name, slug)
-			VALUES ($1, $2, $3)
-		`, p.tenantServiceID, p.tenantName, slug); err != nil {
+			INSERT INTO service_instances (tenant_service_id, service_id, name, slug)
+			VALUES ($1, $2, $3, $4)
+		`, p.tenantServiceID, p.serviceID, p.tenantName, slug); err != nil {
 			logger.Fatal("insert service_instances",
 				zap.Stringer("tenant_service_id", p.tenantServiceID),
 				zap.Error(err))

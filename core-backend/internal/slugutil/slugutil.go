@@ -1,6 +1,10 @@
 package slugutil
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
 
 // transliterations and Slugify are a faithful port of
 // booking-backend/internal/store/sysadmin.go:619-639 (storeSlugify), so the
@@ -27,4 +31,34 @@ func Slugify(s string) string {
 		}
 	}
 	return sb.String()
+}
+
+// Unique returns base, or base suffixed with -2, -3, ... when taken reports it
+// as already used. Callers check within their uniqueness scope (per service for
+// service_instances); a concurrent insert can still race past this check, in
+// which case the database UNIQUE constraint rejects it.
+func Unique(base string, taken func(slug string) (bool, error)) (string, error) {
+	candidate := base
+	for n := 2; ; n++ {
+		used, err := taken(candidate)
+		if err != nil {
+			return "", err
+		}
+		if !used {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s-%d", base, n)
+	}
+}
+
+// MaxLen mirrors service_instances.slug VARCHAR(100).
+const MaxLen = 100
+
+var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// Valid reports whether s is an acceptable hand-edited slug: lowercase ASCII
+// letters and digits in hyphen-separated groups (no leading, trailing or
+// doubled hyphens), at most MaxLen characters.
+func Valid(s string) bool {
+	return len(s) <= MaxLen && validSlug.MatchString(s)
 }

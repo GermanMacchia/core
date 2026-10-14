@@ -63,6 +63,7 @@ func main() {
 	userServiceAccessRepo := repository.NewUserServiceAccessRepo(pool)
 	serviceInstanceRepo := repository.NewServiceInstanceRepo(pool)
 	tenantServiceRepo := repository.NewTenantServiceRepo(pool)
+	roleRepo := repository.NewRoleRepo(pool)
 
 	// JWT
 	jwtManager := pkgjwt.NewManager(cfg.JWT.Secret)
@@ -74,8 +75,8 @@ func main() {
 
 	// Handlers
 	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo, userServiceAccessRepo, serviceInstanceRepo, tenantServiceRepo)
-	serviceHandler := handler.NewServiceHandler(serviceSvc)
-	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo)
+	serviceHandler := handler.NewServiceHandler(serviceSvc, roleRepo)
+	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo, serviceRepo, tenantServiceRepo)
 	planHandler := handler.NewPlanHandler(planRepo)
 	configDefinitionHandler := handler.NewConfigDefinitionHandler(configDefinitionRepo)
 	cacheHandler := handler.NewCacheHandler(redisCache)
@@ -108,6 +109,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(apiKeyMW.Verify)
 		r.With(tenantResolverMW.Resolve).Get("/api/v1/public/config", tenantHandler.PublicConfig)
+		r.With(tenantResolverMW.Resolve).Get("/api/v1/public/services", tenantHandler.PublicServices)
 		r.Get("/api/v1/public/portals/{portal_id}", portalHandler.PublicConfig)
 	})
 
@@ -136,6 +138,9 @@ func main() {
 		r.Post("/api/v1/tenants/{id}/users", tenantHandler.CreateUser)
 		r.Patch("/api/v1/tenants/{id}/users/{uid}", tenantHandler.UpdateUser)
 		r.Delete("/api/v1/tenants/{id}/users/{uid}", tenantHandler.DeleteUser)
+		r.Get("/api/v1/tenants/{id}/users/{uid}/service-access", tenantHandler.ListUserServiceAccess)
+		r.Post("/api/v1/tenants/{id}/users/{uid}/service-access", tenantHandler.CreateUserServiceAccess)
+		r.Delete("/api/v1/tenants/{id}/users/{uid}/service-access/{grant_id}", tenantHandler.DeleteUserServiceAccess)
 
 		// Portal management
 		r.Patch("/api/v1/portals/{portal_id}", portalHandler.UpdatePortal)
@@ -148,6 +153,7 @@ func main() {
 		// Service catalog
 		r.Get("/api/v1/services", serviceHandler.List)
 		r.Get("/api/v1/services/{id}", serviceHandler.Get)
+		r.Get("/api/v1/services/{id}/roles", serviceHandler.ListRoles)
 
 		// FAQs (role-branching inside the handler)
 		r.Get("/api/v1/faqs", faqHandler.List)
@@ -174,6 +180,9 @@ func main() {
 			r.Post("/api/v1/services", serviceHandler.Create)
 			r.Patch("/api/v1/services/{id}", serviceHandler.Update)
 			r.Delete("/api/v1/services/{id}", serviceHandler.Delete)
+			r.Post("/api/v1/services/{id}/roles", serviceHandler.CreateRole)
+			r.Patch("/api/v1/roles/{role_id}", serviceHandler.UpdateRole)
+			r.Delete("/api/v1/roles/{role_id}", serviceHandler.DeleteRole)
 			r.Post("/api/v1/plans", planHandler.Create)
 			r.Patch("/api/v1/plans/{id}", planHandler.Update)
 			r.Delete("/api/v1/plans/{id}", planHandler.Delete)

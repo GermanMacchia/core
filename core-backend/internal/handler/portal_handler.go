@@ -14,12 +14,14 @@ import (
 )
 
 type PortalHandler struct {
-	portals *repository.PortalRepo
-	tenants *repository.TenantRepo
+	portals        *repository.PortalRepo
+	tenants        *repository.TenantRepo
+	services       *repository.ServiceRepo
+	tenantServices *repository.TenantServiceRepo
 }
 
-func NewPortalHandler(portals *repository.PortalRepo, tenants *repository.TenantRepo) *PortalHandler {
-	return &PortalHandler{portals: portals, tenants: tenants}
+func NewPortalHandler(portals *repository.PortalRepo, tenants *repository.TenantRepo, services *repository.ServiceRepo, tenantServices *repository.TenantServiceRepo) *PortalHandler {
+	return &PortalHandler{portals: portals, tenants: tenants, services: services, tenantServices: tenantServices}
 }
 
 // firstString returns the first non-empty string value for key across maps,
@@ -255,7 +257,12 @@ func (h *PortalHandler) GetServicesAuth(w http.ResponseWriter, r *http.Request) 
 	response.JSON(w, http.StatusOK, services)
 }
 
-// AssignService adds or re-enables a service on a portal.
+// AssignService adds or re-enables a service on a portal. When the service
+// requires a service_instance ("negocio"), it ensures the tenant's adhesion
+// (tenant_services + service_instances) exists first, via
+// TenantServiceRepo.AssignService — the same path used for the direct
+// Tenant->Service adhesion — so portal-only assignments don't skip creating
+// the "negocio".
 //
 //	POST /api/v1/portals/{portal_id}/services
 func (h *PortalHandler) AssignService(w http.ResponseWriter, r *http.Request) {
@@ -282,6 +289,24 @@ func (h *PortalHandler) AssignService(w http.ResponseWriter, r *http.Request) {
 	if body.Slug == "" {
 		response.BadRequest(w, "slug is required")
 		return
+	}
+
+	svc, err := h.services.GetByID(r.Context(), body.ServiceID)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+
+	if svc.RequiresInstance {
+		tenantID, err := h.portals.GetTenantIDByPortalID(r.Context(), portalID)
+		if err != nil {
+			response.InternalError(w)
+			return
+		}
+		if _, err := h.tenantServices.AssignService(r.Context(), tenantID, body.ServiceID); err != nil {
+			response.InternalError(w)
+			return
+		}
 	}
 
 	ps, err := h.portals.AssignService(r.Context(), domain.AssignPortalServiceInput{

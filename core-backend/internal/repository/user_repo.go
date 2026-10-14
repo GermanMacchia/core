@@ -26,14 +26,14 @@ func (r *UserRepo) Create(ctx context.Context, input domain.CreateUserInput) (*d
 
 	var u domain.User
 	err = r.db.QueryRow(ctx, `
-		INSERT INTO users (tenant_id, portal_id, email, password_hash, role_id)
-		VALUES ($1, $2, $3, $4, (SELECT id FROM roles WHERE name = $5 AND service_id IS NULL))
+		INSERT INTO users (tenant_id, portal_id, email, password_hash, role_id, restrict_services)
+		VALUES ($1, $2, $3, $4, (SELECT id FROM roles WHERE name = $5 AND service_id IS NULL), $6)
 		RETURNING id, tenant_id, portal_id, email, password_hash,
 		          role_id, (SELECT name FROM roles WHERE id = role_id),
-		          is_active, last_login_at, created_at, updated_at
-	`, input.TenantID, input.PortalID, input.Email, string(hash), input.Role).
+		          is_active, restrict_services, last_login_at, created_at, updated_at
+	`, input.TenantID, input.PortalID, input.Email, string(hash), input.Role, input.RestrictServices).
 		Scan(&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-			&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
+			&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -45,28 +45,33 @@ func (r *UserRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, err
 	err := r.db.QueryRow(ctx, `
 		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
 		       u.role_id, r.name,
-		       u.is_active, u.last_login_at, u.created_at, u.updated_at
+		       u.is_active, u.restrict_services, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		JOIN roles r ON r.id = u.role_id
 		WHERE u.id = $1
 	`, id).Scan(&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 	return &u, nil
 }
 
-func (r *UserRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]*domain.User, error) {
-	rows, err := r.db.Query(ctx, `
+func (r *UserRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, includeInactive bool) ([]*domain.User, error) {
+	query := `
 		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
 		       u.role_id, r.name,
-		       u.is_active, u.last_login_at, u.created_at, u.updated_at
+		       u.is_active, u.restrict_services, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		JOIN roles r ON r.id = u.role_id
 		WHERE u.tenant_id = $1
-		ORDER BY u.email
-	`, tenantID)
+	`
+	if !includeInactive {
+		query += ` AND u.is_active = TRUE`
+	}
+	query += ` ORDER BY u.email`
+
+	rows, err := r.db.Query(ctx, query, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list users by tenant: %w", err)
 	}
@@ -76,7 +81,7 @@ func (r *UserRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]*dom
 	for rows.Next() {
 		var u domain.User
 		if err := rows.Scan(&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-			&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, &u)
@@ -85,20 +90,32 @@ func (r *UserRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID) ([]*dom
 }
 
 func (r *UserRepo) Update(ctx context.Context, id uuid.UUID, input domain.UpdateUserInput) (*domain.User, error) {
+	var passwordHash *string
+	if input.Password != nil {
+		hash, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		h := string(hash)
+		passwordHash = &h
+	}
+
 	var u domain.User
 	err := r.db.QueryRow(ctx, `
 		UPDATE users SET
-			portal_id  = COALESCE($2, portal_id),
-			role_id    = COALESCE((SELECT id FROM roles WHERE name = $3 AND service_id IS NULL), role_id),
-			is_active  = COALESCE($4, is_active),
-			updated_at = NOW()
+			portal_id         = COALESCE($2, portal_id),
+			password_hash     = COALESCE($3, password_hash),
+			role_id           = COALESCE((SELECT id FROM roles WHERE name = $4 AND service_id IS NULL), role_id),
+			is_active         = COALESCE($5, is_active),
+			restrict_services = COALESCE($6, restrict_services),
+			updated_at        = NOW()
 		WHERE id = $1
 		RETURNING id, tenant_id, portal_id, email, password_hash,
 		          role_id, (SELECT name FROM roles WHERE id = role_id),
-		          is_active, last_login_at, created_at, updated_at
-	`, id, input.PortalID, input.Role, input.IsActive).
+		          is_active, restrict_services, last_login_at, created_at, updated_at
+	`, id, input.PortalID, passwordHash, input.Role, input.IsActive, input.RestrictServices).
 		Scan(&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-			&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
+			&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("update user: %w", err)
 	}

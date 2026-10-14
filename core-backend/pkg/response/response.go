@@ -39,6 +39,7 @@ func BadRequest(w http.ResponseWriter, msg string) { Error(w, http.StatusBadRequ
 func Unauthorized(w http.ResponseWriter)           { Error(w, http.StatusUnauthorized, "unauthorized") }
 func Forbidden(w http.ResponseWriter)              { Error(w, http.StatusForbidden, "forbidden") }
 func NotFound(w http.ResponseWriter)               { Error(w, http.StatusNotFound, "not found") }
+func Conflict(w http.ResponseWriter, msg string)   { Error(w, http.StatusConflict, msg) }
 func InternalError(w http.ResponseWriter) {
 	Error(w, http.StatusInternalServerError, "internal server error")
 }

@@ -24,13 +24,13 @@ func (r *AuthRepo) GetByEmail(ctx context.Context, tenantID uuid.UUID, email str
 	err := r.db.QueryRow(ctx, `
 		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
 		       u.role_id, ro.name,
-		       u.is_active, u.last_login_at, u.created_at, u.updated_at
+		       u.is_active, u.restrict_services, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		JOIN roles ro ON ro.id = u.role_id
 		WHERE u.tenant_id = $1 AND u.email = $2
 	`, tenantID, email).Scan(
 		&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get user by email: %w", err)
@@ -43,14 +43,14 @@ func (r *AuthRepo) GetByEmailGlobal(ctx context.Context, email string) (*domain.
 	err := r.db.QueryRow(ctx, `
 		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
 		       u.role_id, ro.name,
-		       u.is_active, u.last_login_at, u.created_at, u.updated_at
+		       u.is_active, u.restrict_services, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		JOIN roles ro ON ro.id = u.role_id
 		WHERE u.email = $1 AND ro.name = 'superadmin'
 		LIMIT 1
 	`, email).Scan(
 		&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get user by email global: %w", err)
@@ -63,13 +63,13 @@ func (r *AuthRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, err
 	err := r.db.QueryRow(ctx, `
 		SELECT u.id, u.tenant_id, u.portal_id, u.email, u.password_hash,
 		       u.role_id, ro.name,
-		       u.is_active, u.last_login_at, u.created_at, u.updated_at
+		       u.is_active, u.restrict_services, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		JOIN roles ro ON ro.id = u.role_id
 		WHERE u.id = $1
 	`, id).Scan(
 		&u.ID, &u.TenantID, &u.PortalID, &u.Email, &u.PasswordHash,
-		&u.RoleID, &u.Role, &u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.RoleID, &u.Role, &u.IsActive, &u.RestrictServices, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get user by id: %w", err)
@@ -97,6 +97,40 @@ func (r *AuthRepo) GetTenantServiceIDs(ctx context.Context, tenantID uuid.UUID) 
 	`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get tenant service ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetGrantedServiceIDs returns the distinct service ids userID holds a
+// user_service_access grant for, scoped to tenantID and filtered to
+// enabled/active services — the restricted-user counterpart to
+// GetTenantServiceIDs, used when users.restrict_services is TRUE. Same join
+// shape as HasServiceGrant/ResolveServiceAccess: user_service_access ->
+// service_instances -> tenant_services -> services.
+func (r *AuthRepo) GetGrantedServiceIDs(ctx context.Context, userID, tenantID uuid.UUID) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT s.id::text
+		FROM user_service_access usa
+		JOIN service_instances si ON si.id = usa.service_instance_id
+		JOIN tenant_services ts   ON ts.id = si.tenant_service_id
+		JOIN services s           ON s.id = ts.service_id
+		WHERE usa.user_id = $1
+		  AND ts.tenant_id  = $2
+		  AND ts.is_enabled = TRUE
+		  AND s.is_active   = TRUE
+	`, userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get granted service ids: %w", err)
 	}
 	defer rows.Close()
 

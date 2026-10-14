@@ -9,11 +9,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tu-org/core-backend/internal/authz"
 	"github.com/tu-org/core-backend/internal/domain"
 	"github.com/tu-org/core-backend/internal/middleware"
 	"github.com/tu-org/core-backend/internal/repository"
 	"github.com/tu-org/core-backend/internal/service"
+	"github.com/tu-org/core-backend/internal/slugutil"
 	"github.com/tu-org/core-backend/pkg/response"
 )
 
@@ -243,17 +245,29 @@ func (h *TenantHandler) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Name   *string        `json:"name"`
+		Slug   *string        `json:"slug"`
 		Config domain.JSONMap `json:"config"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
+	// The slug is the negocio's public URL: changing it breaks links already
+	// shared, so it is only ever set explicitly, never derived from name here.
+	if body.Slug != nil && !slugutil.Valid(*body.Slug) {
+		response.BadRequest(w, "invalid slug: use lowercase letters, digits and single hyphens (max 100)")
+		return
+	}
 
-	inst, err := h.tenantServices.UpdateInstance(r.Context(), tenantID, serviceID, body.Name, body.Config)
+	inst, err := h.tenantServices.UpdateInstance(r.Context(), tenantID, serviceID, body.Name, body.Slug, body.Config)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			response.Error(w, http.StatusNotFound, "no service instance found for this tenant/service")
+			return
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			response.Conflict(w, "slug already in use by another business of this service")
 			return
 		}
 		response.InternalError(w)
@@ -274,7 +288,8 @@ func (h *TenantHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := h.tenants.GetUsers(r.Context(), id)
+	includeInactive := r.URL.Query().Get("include_inactive") == "true"
+	users, err := h.tenants.GetUsers(r.Context(), id, includeInactive)
 	if err != nil {
 		response.InternalError(w)
 		return
@@ -368,6 +383,138 @@ func (h *TenantHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListUserServiceAccess lists the user_service_access grants held by a
+// tenant user — used to populate the per-user "Servicios" grant panel.
+//
+//	GET /api/v1/tenants/{id}/users/{uid}/service-access
+func (h *TenantHandler) ListUserServiceAccess(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	userID, err := uuid.Parse(chi.URLParam(r, "uid"))
+	if err != nil {
+		response.BadRequest(w, "invalid user id")
+		return
+	}
+
+	grants, err := h.access.ListGrantsByUser(r.Context(), userID)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusOK, grants)
+}
+
+// CreateUserServiceAccess grants a tenant user a role on a specific
+// service_instance. The DB trigger enforce_role_service_match (migration
+// 031) validates that role_id belongs to the same service as
+// service_instance_id — that error, and the user_id/service_instance_id
+// UNIQUE constraint, are mapped to a 400/409 below instead of being
+// reimplemented here.
+//
+//	POST /api/v1/tenants/{id}/users/{uid}/service-access
+func (h *TenantHandler) CreateUserServiceAccess(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	userID, err := uuid.Parse(chi.URLParam(r, "uid"))
+	if err != nil {
+		response.BadRequest(w, "invalid user id")
+		return
+	}
+
+	var body struct {
+		ServiceInstanceID uuid.UUID `json:"service_instance_id"`
+		RoleID            uuid.UUID `json:"role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+	if body.ServiceInstanceID == uuid.Nil || body.RoleID == uuid.Nil {
+		response.BadRequest(w, "service_instance_id and role_id are required")
+		return
+	}
+
+	grant, err := h.access.CreateGrant(r.Context(), userID, body.ServiceInstanceID, body.RoleID)
+	if err != nil {
+		if msg, status, ok := pgGrantError(err); ok {
+			response.Error(w, status, msg)
+			return
+		}
+		response.InternalError(w)
+		return
+	}
+	response.JSON(w, http.StatusCreated, grant)
+}
+
+// DeleteUserServiceAccess revokes a user_service_access grant.
+//
+//	DELETE /api/v1/tenants/{id}/users/{uid}/service-access/{grant_id}
+func (h *TenantHandler) DeleteUserServiceAccess(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.BadRequest(w, "invalid tenant id")
+		return
+	}
+	callerID, ok := callerUserID(r)
+	if !ok || !authz.CanAccessTenant(r.Context(), h.access, callerID, tenantID) {
+		middleware.Forbidden(w)
+		return
+	}
+	userID, err := uuid.Parse(chi.URLParam(r, "uid"))
+	if err != nil {
+		response.BadRequest(w, "invalid user id")
+		return
+	}
+	grantID, err := uuid.Parse(chi.URLParam(r, "grant_id"))
+	if err != nil {
+		response.BadRequest(w, "invalid grant id")
+		return
+	}
+
+	if err := h.access.DeleteGrant(r.Context(), userID, grantID); err != nil {
+		response.InternalError(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// pgGrantError maps a Postgres error surfaced from CreateGrant to a
+// user-facing status/message: SQLSTATE 23505 (the
+// user_id/service_instance_id UNIQUE constraint) is a 409 conflict; P0001
+// (the RAISE EXCEPTION inside the enforce_role_service_match trigger —
+// migration 031) is a 400 carrying the trigger's own message. Any other
+// error is left for the caller to treat as a 500.
+func pgGrantError(err error) (msg string, status int, ok bool) {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return "", 0, false
+	}
+	switch pgErr.Code {
+	case "23505":
+		return "this user already has a grant on that service instance", http.StatusConflict, true
+	case "P0001":
+		return pgErr.Message, http.StatusBadRequest, true
+	default:
+		return "", 0, false
+	}
+}
+
 // PublicConfig returns the tenant bootstrap config for the Shell before login.
 // Tenant is resolved from X-Tenant-ID header or domain (no JWT required).
 func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
@@ -419,6 +566,27 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{
 		"tenant": meta,
 		"mfes":   mfes,
+	})
+}
+
+// PublicServices returns the services a tenant has directly (via
+// tenant_services), independent of any Portal. Tenant is resolved from
+// X-Tenant-ID header or domain (no JWT required).
+func (h *TenantHandler) PublicServices(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromCtx(r.Context())
+	if tenant == nil {
+		response.NotFound(w)
+		return
+	}
+
+	svcs, err := h.tenantServices.ListByTenant(r.Context(), tenant.ID)
+	if err != nil {
+		response.InternalError(w)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]any{
+		"services": svcs,
 	})
 }
 
@@ -514,15 +682,19 @@ func (h *TenantHandler) PublicListInstancesByService(w http.ResponseWriter, r *h
 		Name   string `json:"name"`
 		Slug   string `json:"slug"`
 		Status string `json:"status"`
+		// LogoURL is read from config["logo_url"]; omitted when unset.
+		LogoURL string `json:"logo_url,omitempty"`
 	}
 
 	items := make([]instanceItem, 0, len(instances))
 	for _, inst := range instances {
+		logoURL, _ := inst.Config["logo_url"].(string)
 		items = append(items, instanceItem{
-			ID:     inst.ID.String(),
-			Name:   inst.Name,
-			Slug:   inst.Slug,
-			Status: string(inst.Status),
+			ID:      inst.ID.String(),
+			Name:    inst.Name,
+			Slug:    inst.Slug,
+			Status:  string(inst.Status),
+			LogoURL: logoURL,
 		})
 	}
 	response.JSON(w, http.StatusOK, items)

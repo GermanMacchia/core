@@ -35,6 +35,8 @@ Configuración mínima: plugins de Angular y Tailwind, servidor en puerto 4200 c
 | Variable | Ejemplo | Descripción |
 |----------|---------|-------------|
 | `AUTH_API_URL` | `https://auth.tu-dominio.com` | URL base del authenticator. Se embebe en el `index.html` standalone al buildear. En modo MFE real, el shell la inyecta vía props. |
+| `VITE_CORE_API_URL` | `https://api.tu-dominio.com` | URL base de core-backend. Se embebe en el bundle al buildear (`import.meta.env`). Sin definir usa `http://localhost:8080`. |
+| `VITE_AUTH_API_URL` | `https://auth.tu-dominio.com` | URL base de core-authenticator para el login standalone. Si el shell inyecta `authApiUrl`, gana esa. Sin definir usa `http://localhost:8081`. |
 
 Copiar `.env.example` → `.env` antes de buildear.
 

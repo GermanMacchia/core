@@ -12,6 +12,8 @@ shell-cliente → VITE_TENANT_ID=<uuid-beta>  VITE_PORTAL_ID=<uuid-portal-beta>
 
 Los UUIDs de tenant y portal se bajan al build (variables de entorno). El shell **no necesita URL pública ni subdominio** para identificarse — los UUIDs son suficientes. El bootstrap siempre ocurre antes del login. Cada servicio MFE gestiona su propio ciclo de auth — no existe un MFE de login global en el shell.
 
+**Bootstrap tenant-direct (shells multi-tenant).** Cuando un servicio se asocia a un tenant directamente vía `tenant_services` (sin pasar por un Portal), no aplica el modo "un shell por portal" de arriba. Este modo es para apps compartidas entre muchos tenants (por ejemplo un `booking-admin` que sirve a N tenants), a diferencia del modo portal-bound, con marca propia, un shell por portal de tenant. En ese caso el shell resuelve sus servicios llamando a `GET /api/v1/public/services` — misma resolución de tenant que `/public/config` (header `X-Tenant-ID` o dominio, sin JWT) — que devuelve los servicios habilitados del tenant junto con su MFE URL y config de instancia, sin necesitar un `portal_id`.
+
 | Servicio | Puerto | Responsabilidad |
 |---|---|---|
 | **Shell** (single-spa + Vite) | 9000 | Orquestador de MFEs por portal. Bootstrap, registro de servicios, routing |

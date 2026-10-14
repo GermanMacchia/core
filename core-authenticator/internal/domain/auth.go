@@ -25,9 +25,15 @@ type User struct {
 	RoleID       uuid.UUID  `json:"role_id"`
 	Role         UserRole   `json:"role"`
 	IsActive     bool       `json:"is_active"`
-	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	// RestrictServices, when true, means the JWT's services claim must be
+	// built from this user's user_service_access grants (via
+	// AuthRepo.GetGrantedServiceIDs) instead of every service the tenant is
+	// adhered to (AuthRepo.GetTenantServiceIDs). See
+	// core-backend/migrations/034_add_restrict_services_to_users.sql.
+	RestrictServices bool       `json:"restrict_services"`
+	LastLoginAt      *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // ResolvedAccess is a fresh, DB-backed user_service_access grant resolved at

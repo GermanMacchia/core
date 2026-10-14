@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core'
 import { HttpClient, HttpHeaders } from '@angular/common/http'
 import { AuthService } from './auth.service'
-import {
+import type {
 	ApiResponse,
 	Plan,
 	PlanServicePricing,
@@ -13,9 +13,11 @@ import {
 	TenantUser,
 	ConfigDefinition,
 	Faq,
+	ServiceAccessGrant,
+	RoleOption,
+	ServiceInstance,
 } from '../models/tenant.model'
-
-const CORE_API = 'http://localhost:8080'
+import { CORE_API_URL as CORE_API } from '../config/api.config'
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -206,8 +208,8 @@ export class AdminService {
 		)
 	}
 
-	updateTenantServiceInstance(tenantId: string, serviceId: string, body: { name?: string; config?: Record<string, unknown> }) {
-		return this.http.patch<ApiResponse<{ id: string; name: string; slug: string; config: Record<string, unknown> }>>(
+	updateTenantServiceInstance(tenantId: string, serviceId: string, body: { name?: string; slug?: string; config?: Record<string, unknown> }) {
+		return this.http.patch<ApiResponse<ServiceInstance>>(
 			`${CORE_API}/api/v1/tenants/${tenantId}/services/${serviceId}/instance`,
 			body,
 			{ headers: this.headers },
@@ -265,9 +267,9 @@ export class AdminService {
 
 	// ── Tenant users ──────────────────────────────────────────────────────────
 
-	getTenantUsers(tenantId: string) {
+	getTenantUsers(tenantId: string, includeInactive = false) {
 		return this.http.get<ApiResponse<TenantUser[]>>(
-			`${CORE_API}/api/v1/tenants/${tenantId}/users`,
+			`${CORE_API}/api/v1/tenants/${tenantId}/users${includeInactive ? '?include_inactive=true' : ''}`,
 			{ headers: this.headers },
 		)
 	}
@@ -280,7 +282,7 @@ export class AdminService {
 		)
 	}
 
-	updateTenantUser(tenantId: string, userId: string, body: { role?: string; is_active?: boolean; portal_id?: string }) {
+	updateTenantUser(tenantId: string, userId: string, body: { role?: string; is_active?: boolean; portal_id?: string; restrict_services?: boolean; password?: string }) {
 		return this.http.patch<ApiResponse<TenantUser>>(
 			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`,
 			body,
@@ -292,6 +294,57 @@ export class AdminService {
 		return this.http.delete(`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}`, {
 			headers: this.headers,
 		})
+	}
+
+	// ── User service access grants ──────────────────────────────────────────
+
+	listUserServiceAccess(tenantId: string, userId: string) {
+		return this.http.get<ApiResponse<ServiceAccessGrant[]>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}/service-access`,
+			{ headers: this.headers },
+		)
+	}
+
+	createUserServiceAccess(tenantId: string, userId: string, body: { service_instance_id: string; role_id: string }) {
+		return this.http.post<ApiResponse<ServiceAccessGrant>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}/service-access`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	deleteUserServiceAccess(tenantId: string, userId: string, grantId: string) {
+		return this.http.delete(
+			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}/service-access/${grantId}`,
+			{ headers: this.headers },
+		)
+	}
+
+	listRolesByService(serviceId: string) {
+		return this.http.get<ApiResponse<RoleOption[]>>(
+			`${CORE_API}/api/v1/services/${serviceId}/roles`,
+			{ headers: this.headers },
+		)
+	}
+
+	createRole(serviceId: string, body: { name: string; description?: string }) {
+		return this.http.post<ApiResponse<RoleOption>>(
+			`${CORE_API}/api/v1/services/${serviceId}/roles`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	updateRole(roleId: string, body: { name?: string; description?: string }) {
+		return this.http.patch<ApiResponse<RoleOption>>(
+			`${CORE_API}/api/v1/roles/${roleId}`,
+			body,
+			{ headers: this.headers },
+		)
+	}
+
+	deleteRole(roleId: string) {
+		return this.http.delete(`${CORE_API}/api/v1/roles/${roleId}`, { headers: this.headers })
 	}
 
 	// ── Config Definitions ──────────────────────────────────────────────────

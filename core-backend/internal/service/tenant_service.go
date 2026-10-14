@@ -43,8 +43,8 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *TenantService) GetUsers(ctx context.Context, tenantID uuid.UUID) ([]*domain.User, error) {
-	return s.userRepo.ListByTenant(ctx, tenantID)
+func (s *TenantService) GetUsers(ctx context.Context, tenantID uuid.UUID, includeInactive bool) ([]*domain.User, error) {
+	return s.userRepo.ListByTenant(ctx, tenantID, includeInactive)
 }
 
 func (s *TenantService) CreateUser(ctx context.Context, input domain.CreateUserInput) (*domain.User, error) {
