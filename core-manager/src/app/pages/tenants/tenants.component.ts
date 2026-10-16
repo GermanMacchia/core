@@ -9,8 +9,9 @@ import {
 	InfoModalService,
 	ToastService,
 } from '@germanmacchia/angular-ui'
-import { Plan, Tenant } from '../../core/models/tenant.model'
+import type { CreateTenantInput, Plan, Tenant } from '../../core/models/tenant.model'
 import { AdminService } from '../../core/services/admin.service'
+import { ADDRESS_MAX_LENGTH, CUIT_PATTERN, formatCuit, orDash, PHONE_PATTERN } from '../../shared/tenant-contact'
 
 const STATUS_BADGE: Record<string, string> = {
 	active: 'badge-success',
@@ -78,19 +79,27 @@ export class TenantsComponent implements OnInit {
 
 	createForm = this.fb.group({
 		name: ['', Validators.required],
-		domain: [''],
+		contact_email: ['', Validators.email],
+		contact_phone: ['', Validators.pattern(PHONE_PATTERN)],
+		tax_id: ['', Validators.pattern(CUIT_PATTERN)],
+		address: ['', Validators.maxLength(ADDRESS_MAX_LENGTH)],
 		plan_id: ['', Validators.required],
 	})
 
 	createFields = signal<FormField[]>([
 		{ name: 'name', label: 'Nombre', type: 'text', required: true, placeholder: 'Acme Corp' },
-		{ name: 'domain', label: 'Dominio', type: 'text', placeholder: 'acme.example.com' },
+		{ name: 'contact_email', label: 'Email de contacto', type: 'email', placeholder: 'admin@acme.com' },
+		{ name: 'contact_phone', label: 'Teléfono de contacto', type: 'text', placeholder: '+54 11 4555-1234' },
+		{ name: 'tax_id', label: 'CUIT/CUIL', type: 'text', placeholder: '20-12345678-9' },
+		{ name: 'address', label: 'Dirección', type: 'textarea', placeholder: 'Av. Corrientes 1234, CABA' },
 		{ name: 'plan_id', label: 'Plan', type: 'select', required: true, options: [] },
 	])
 
 	columns: CompactListColumn<Tenant>[] = [
 		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
-		{ key: 'domain', header: 'Dominio', type: 'text', transform: t => t.domain ?? '—' },
+		{ key: 'contact_email', header: 'Email de contacto', type: 'text', transform: t => orDash(t.contact_email) },
+		{ key: 'contact_phone', header: 'Teléfono de contacto', type: 'text', transform: t => orDash(t.contact_phone) },
+		{ key: 'tax_id', header: 'CUIT/CUIL', type: 'text', transform: t => formatCuit(t.tax_id) },
 		{ key: 'plan', header: 'Plan', type: 'text', transform: t => t.plan?.name ?? '—' },
 		{ key: 'status', header: 'Estado', type: 'custom' },
 		{ key: 'created_at', header: 'Creado', type: 'custom' },
@@ -154,15 +163,22 @@ export class TenantsComponent implements OnInit {
 
 	onCreate() {
 		if (this.createForm.invalid) {
-			this.toast.toast({ severity: 'warning', body: 'Completá todos los campos requeridos.' })
+			this.toast.toast({ severity: 'warning', body: 'Revisá los campos: hay datos requeridos o con formato inválido.' })
 			return
 		}
 		const v = this.createForm.getRawValue()
-		const body: { name: string; plan_id: string; domain?: string } = {
-			name: v.name!,
-			plan_id: v.plan_id!,
+		const body: CreateTenantInput = {
+			name: v.name ?? '',
+			plan_id: v.plan_id ?? '',
 		}
-		if (v.domain) body.domain = v.domain
+		const email = v.contact_email?.trim()
+		const phone = v.contact_phone?.trim()
+		const taxId = v.tax_id?.trim()
+		const address = v.address?.trim()
+		if (email) body.contact_email = email
+		if (phone) body.contact_phone = phone
+		if (taxId) body.tax_id = taxId
+		if (address) body.address = address
 
 		this.admin.createTenant(body).subscribe({
 			next: res => {

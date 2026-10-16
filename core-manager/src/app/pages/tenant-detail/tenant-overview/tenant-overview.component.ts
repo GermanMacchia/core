@@ -9,13 +9,14 @@ import {
   signal,
   SimpleChanges,
 } from '@angular/core'
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms'
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms'
 import type { InfoCardData } from '@germanmacchia/angular-ui'
 import { InfoCard, ToastService } from '@germanmacchia/angular-ui'
-import type { ConfigDefinition, Tenant } from '../../../core/models/tenant.model'
+import type { ConfigDefinition, Tenant, UpdateTenantInput } from '../../../core/models/tenant.model'
 import { AdminService } from '../../../core/services/admin.service'
 import { ConfigEditorComponent } from '../../../shared/config-editor.component'
 import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } from '../../../shared/config-fields'
+import { ADDRESS_MAX_LENGTH, CUIT_PATTERN, formatCuit, orDash, PHONE_PATTERN } from '../../../shared/tenant-contact'
 
 const STATUS_BADGE: Record<string, string> = {
   active: 'badge-success',
@@ -51,9 +52,33 @@ const STATUS_BADGE: Record<string, string> = {
                 <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Nombre</span></div>
                 <input formControlName="name" type="text" class="input input-bordered" placeholder="Nombre del tenant">
               </label>
+              <label class="form-control">
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Email de contacto</span></div>
+                <input formControlName="contact_email" type="email" class="input input-bordered" placeholder="admin@acme.com">
+                @if (invalid('contact_email')) {
+                  <span class="text-error text-xs mt-1">Ingresá un email válido.</span>
+                }
+              </label>
+              <label class="form-control">
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Teléfono de contacto</span></div>
+                <input formControlName="contact_phone" type="text" class="input input-bordered" placeholder="+54 11 4555-1234">
+                @if (invalid('contact_phone')) {
+                  <span class="text-error text-xs mt-1">Usá solo dígitos, espacios, guiones, paréntesis y un + inicial (mínimo 6 dígitos).</span>
+                }
+              </label>
+              <label class="form-control">
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">CUIT/CUIL</span></div>
+                <input formControlName="tax_id" type="text" class="input input-bordered" placeholder="20-12345678-9">
+                @if (invalid('tax_id')) {
+                  <span class="text-error text-xs mt-1">Ingresá 11 dígitos, con o sin guiones.</span>
+                }
+              </label>
               <label class="form-control md:col-span-2">
-                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Dominio</span></div>
-                <input formControlName="domain" type="text" class="input input-bordered" placeholder="acme.example.com">
+                <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Dirección</span></div>
+                <textarea formControlName="address" class="textarea textarea-bordered" rows="2" placeholder="Av. Corrientes 1234, CABA"></textarea>
+                @if (invalid('address')) {
+                  <span class="text-error text-xs mt-1">Máximo {{ addressMaxLength }} caracteres.</span>
+                }
               </label>
               <label class="form-control md:col-span-2">
                 <div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Estado</span></div>
@@ -93,9 +118,14 @@ export class TenantOverviewComponent implements OnInit, OnChanges {
   configDefs = signal<ConfigDefinition[]>([])
   editConfigValues = signal<Record<string, string>>({})
 
+  readonly addressMaxLength = ADDRESS_MAX_LENGTH
+
   editForm = this.fb.group({
     name: [''],
-    domain: [''],
+    contact_email: ['', Validators.email],
+    contact_phone: ['', Validators.pattern(PHONE_PATTERN)],
+    tax_id: ['', Validators.pattern(CUIT_PATTERN)],
+    address: ['', Validators.maxLength(ADDRESS_MAX_LENGTH)],
     status: ['active'],
   })
 
@@ -110,7 +140,10 @@ export class TenantOverviewComponent implements OnInit, OnChanges {
       sections: [
         { name: 'ID', content: t.id, icon: 'bi bi-hash' },
         { name: 'Estado', content: t.status, type: 'badge', contentClass: this.statusBadge(t.status), icon: 'bi bi-circle' },
-        { name: 'Dominio', content: t.domain ?? '—', icon: 'bi bi-globe' },
+        { name: 'Email de contacto', content: orDash(t.contact_email), icon: 'bi bi-envelope' },
+        { name: 'Teléfono de contacto', content: orDash(t.contact_phone), icon: 'bi bi-telephone' },
+        { name: 'CUIT/CUIL', content: formatCuit(t.tax_id), icon: 'bi bi-file-earmark-text' },
+        { name: 'Dirección', content: orDash(t.address), icon: 'bi bi-geo-alt' },
         { name: 'Plan', content: t.plan?.name ?? '—', icon: 'bi bi-credit-card' },
         { name: 'Precio', content: t.plan ? `$${t.plan.price}` : '—', icon: 'bi bi-cash' },
         { name: 'Creado', content: this.fmtDate(t.created_at), icon: 'bi bi-calendar' },
@@ -131,29 +164,36 @@ export class TenantOverviewComponent implements OnInit, OnChanges {
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['tenant'] && this.tenant) {
-      this.editForm.patchValue({
-        name: this.tenant.name,
-        domain: this.tenant.domain ?? '',
-        status: this.tenant.status,
-      })
+      this.patchEditForm()
     }
   }
 
   openEdit() {
-    this.editForm.patchValue({
-      name: this.tenant.name,
-      domain: this.tenant.domain ?? '',
-      status: this.tenant.status,
-    })
+    this.patchEditForm()
     this.editConfigValues.set(existingConfigToValues(this.tenant.config ?? {}, this.configDefs()))
     this.showEdit.set(true)
   }
 
+  invalid(control: string) {
+    const c = this.editForm.get(control)
+    return !!c && c.invalid && (c.dirty || c.touched)
+  }
+
   onUpdate() {
+    if (this.editForm.invalid) {
+      this.editForm.markAllAsTouched()
+      this.toast.toast({ severity: 'warning', body: 'Revisá los campos con formato inválido.' })
+      return
+    }
     const v = this.editForm.getRawValue()
-    const body: { name?: string; domain?: string; status?: string; config?: Record<string, unknown> } = {}
+    // Contact fields are always sent: an empty string clears the stored value.
+    const body: UpdateTenantInput = {
+      contact_email: v.contact_email?.trim() ?? '',
+      contact_phone: v.contact_phone?.trim() ?? '',
+      tax_id: v.tax_id?.trim() ?? '',
+      address: v.address?.trim() ?? '',
+    }
     if (v.name) body.name = v.name
-    if (v.domain !== undefined) body.domain = v.domain || undefined
     if (v.status) body.status = v.status
     body.config = buildConfigFromValues(this.editConfigValues(), this.configDefs())
 
@@ -166,6 +206,17 @@ export class TenantOverviewComponent implements OnInit, OnChanges {
       error: err => {
         this.toast.toast({ severity: 'error', body: err.error?.error ?? 'Error al actualizar.' })
       },
+    })
+  }
+
+  private patchEditForm() {
+    this.editForm.reset({
+      name: this.tenant.name,
+      contact_email: this.tenant.contact_email ?? '',
+      contact_phone: this.tenant.contact_phone ?? '',
+      tax_id: this.tenant.tax_id ? formatCuit(this.tenant.tax_id) : '',
+      address: this.tenant.address ?? '',
+      status: this.tenant.status,
     })
   }
 

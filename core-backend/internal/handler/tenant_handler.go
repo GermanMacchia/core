@@ -73,6 +73,10 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "name is required")
 		return
 	}
+	if err := normalizeCreateTenantInput(&input); err != nil {
+		response.BadRequest(w, err.Error())
+		return
+	}
 
 	tenant, err := h.tenants.Create(r.Context(), input)
 	if err != nil {
@@ -117,6 +121,10 @@ func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var input domain.UpdateTenantInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		response.BadRequest(w, "invalid request body")
+		return
+	}
+	if err := normalizeUpdateTenantInput(&input); err != nil {
+		response.BadRequest(w, err.Error())
 		return
 	}
 
@@ -516,7 +524,7 @@ func pgGrantError(err error) (msg string, status int, ok bool) {
 }
 
 // PublicConfig returns the tenant bootstrap config for the Shell before login.
-// Tenant is resolved from X-Tenant-ID header or domain (no JWT required).
+// Tenant is resolved from the X-Tenant-ID header (no JWT required).
 func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromCtx(r.Context())
 	if tenant == nil {
@@ -571,7 +579,7 @@ func (h *TenantHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 
 // PublicServices returns the services a tenant has directly (via
 // tenant_services), independent of any Portal. Tenant is resolved from
-// X-Tenant-ID header or domain (no JWT required).
+// X-Tenant-ID header (no JWT required).
 func (h *TenantHandler) PublicServices(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromCtx(r.Context())
 	if tenant == nil {

@@ -95,7 +95,7 @@ flowchart TB
 **Estado: CONFIRMADO** — código real leído en `../shell` (repo hermano, `src/root-config.js`, `src/config.js`, `src/api.js`, `src/auth.js`, `package.json`, `README.md`).
 
 Además existen **dos** endpoints de bootstrap público distintos, ambos confirmados en `cmd/api/main.go`:
-- `GET /api/v1/public/config` (resuelve portal por **dominio**, vía `tenantResolverMW`) — el que documenta `README.md` (usado por `core-manager` standalone, vía `booking-admin`/`booking-platform` `tenant.service.ts` también).
+- `GET /api/v1/public/config` (resuelve el tenant por header `X-Tenant-ID` o claims del JWT, vía `tenantResolverMW`; ya no hay resolución por dominio desde la migración 037) — el que documenta `README.md` (usado por `core-manager` standalone, vía `booking-admin`/`booking-platform` `tenant.service.ts` también).
 - `GET /api/v1/public/portals/{portal_id}` (resuelve portal por **ID explícito** + header `X-Tenant-ID`) — el que consume el Shell real (`../shell/src/config.js:resolveSource()`), pensado para el modelo "una instancia de Shell por tenant+portal" con IDs fijados en build-time.
 
 ```mermaid
@@ -136,7 +136,7 @@ sequenceDiagram
     participant CB as core-backend :8080
 
     U->>CM: Carga la SPA (APP_INITIALIZER)
-    CM->>CB: GET /api/v1/public/config<br/>(resuelve portal por dominio, API key)
+    CM->>CB: GET /api/v1/public/config<br/>(resuelve tenant por X-Tenant-ID)
     CB-->>CM: {tenant, portal, mfes[]}
     alt token válido en sessionStorage
         CM->>CB: GET /api/v1/me/context (Bearer)
@@ -209,7 +209,7 @@ sequenceDiagram
     CM->>CB: GET /api/v1/me/context<br/>Authorization: Bearer <jwt>
     activate CB
     CB->>CB: jwtMW.Verify()<br/>verifica firma con JWT_SECRET compartido<br/>(core-backend NUNCA firma, solo verifica)
-    CB->>CB: tenantResolverMW.Resolve()<br/>resuelve tenant (dominio/header/claims)
+    CB->>CB: tenantResolverMW.Resolve()<br/>resuelve tenant (claims/header X-Tenant-ID)
     CB->>CB: tenantHandler.Context()<br/>⚠️ lógica interna no leída en esta sesión
     CB-->>CM: {tenant, portal, servicios, rol}
     deactivate CB
@@ -383,7 +383,10 @@ erDiagram
     TENANTS {
         uuid id PK
         string name
-        string domain UK
+        string contact_email
+        string contact_phone
+        string address
+        string tax_id "CUIT/CUIL, 11 dígitos"
         uuid plan_id FK
         string status "active/suspended/trial/cancelled"
         jsonb config

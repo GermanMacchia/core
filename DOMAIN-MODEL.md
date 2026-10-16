@@ -3,7 +3,7 @@
 ```
                                    ┌──────────────────────┐
                                    │        TENANT         │
-                                   │  id, name, domain      │
+                                   │  id, name, contact_*   │
                                    │  plan_id, status        │
                                    └───┬───────┬────────┬───┘
                                        │       │        │
@@ -50,7 +50,7 @@ resueltos desde `deployments.url` / `deployments.version`. Se eliminó
 ## Dos modos de bootstrap de un servicio
 
 - **Portal-bound**: el servicio se expone con marca/dominio propio de un tenant vía `PORTAL_SERVICE`. Un shell por portal (`VITE_PORTAL_ID`), descubre sus apps en `GET /api/v1/public/portals/{portal_id}`.
-- **Tenant-direct**: el tenant se adhiere al servicio directo vía `TENANT_SERVICE`, sin portal. Pensado para apps compartidas entre muchos tenants (ej. `booking-admin`). El shell resuelve el tenant por header `X-Tenant-ID`/dominio y descubre sus servicios en `GET /api/v1/public/services`.
+- **Tenant-direct**: el tenant se adhiere al servicio directo vía `TENANT_SERVICE`, sin portal. Pensado para apps compartidas entre muchos tenants (ej. `booking-admin`). El shell resuelve el tenant por header `X-Tenant-ID` (o claims del JWT) y descubre sus servicios en `GET /api/v1/public/services`.
 
 En ambos modos la autorización runtime de base es la misma: el JWT emitido por `core-authenticator` incluye el claim `services` armado desde `TENANT_SERVICE`, independiente de portal. Ver abajo la capa opcional que restringe esto por usuario.
 

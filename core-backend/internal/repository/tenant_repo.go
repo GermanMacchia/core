@@ -20,11 +20,11 @@ func NewTenantRepo(db *pgxpool.Pool) *TenantRepo {
 func (r *TenantRepo) Create(ctx context.Context, input domain.CreateTenantInput) (*domain.Tenant, error) {
 	var t domain.Tenant
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO tenants (name, domain, plan_id, status, trial_ends_at)
-		VALUES ($1, $2, $3, 'active', $4)
-		RETURNING id, name, domain, plan_id, status, config, trial_ends_at, created_at, updated_at
-	`, input.Name, input.Domain, input.PlanID, input.TrialEndsAt).
-		Scan(&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt)
+		INSERT INTO tenants (name, contact_email, contact_phone, address, tax_id, plan_id, status, trial_ends_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
+		RETURNING id, name, contact_email, contact_phone, address, tax_id, plan_id, status, config, trial_ends_at, created_at, updated_at
+	`, input.Name, input.ContactEmail, input.ContactPhone, input.Address, input.TaxID, input.PlanID, input.TrialEndsAt).
+		Scan(&t.ID, &t.Name, &t.ContactEmail, &t.ContactPhone, &t.Address, &t.TaxID, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create tenant: %w", err)
 	}
@@ -35,13 +35,13 @@ func (r *TenantRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant,
 	var t domain.Tenant
 	var plan domain.Plan
 	err := r.db.QueryRow(ctx, `
-		SELECT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
+		SELECT t.id, t.name, t.contact_email, t.contact_phone, t.address, t.tax_id, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
 		       p.id, p.name, p.max_users, p.max_services, p.price, p.features, p.created_at
 		FROM tenants t
 		JOIN plans p ON p.id = t.plan_id
 		WHERE t.id = $1
 	`, id).Scan(
-		&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
+		&t.ID, &t.Name, &t.ContactEmail, &t.ContactPhone, &t.Address, &t.TaxID, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
 		&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.Price, &plan.Features, &plan.CreatedAt,
 	)
 	if err != nil {
@@ -51,29 +51,9 @@ func (r *TenantRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant,
 	return &t, nil
 }
 
-func (r *TenantRepo) GetByDomain(ctx context.Context, domain_ string) (*domain.Tenant, error) {
-	var t domain.Tenant
-	var plan domain.Plan
-	err := r.db.QueryRow(ctx, `
-		SELECT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
-		       p.id, p.name, p.max_users, p.max_services, p.price, p.features, p.created_at
-		FROM tenants t
-		JOIN plans p ON p.id = t.plan_id
-		WHERE t.domain = $1
-	`, domain_).Scan(
-		&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
-		&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.Price, &plan.Features, &plan.CreatedAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get tenant by domain: %w", err)
-	}
-	t.Plan = &plan
-	return &t, nil
-}
-
 func (r *TenantRepo) List(ctx context.Context, limit, offset int) ([]*domain.Tenant, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
+		SELECT t.id, t.name, t.contact_email, t.contact_phone, t.address, t.tax_id, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at,
 		       p.id, p.name, p.max_users, p.max_services, p.price, p.features, p.created_at
 		FROM tenants t
 		JOIN plans p ON p.id = t.plan_id
@@ -90,7 +70,7 @@ func (r *TenantRepo) List(ctx context.Context, limit, offset int) ([]*domain.Ten
 		var t domain.Tenant
 		var plan domain.Plan
 		if err := rows.Scan(
-			&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
+			&t.ID, &t.Name, &t.ContactEmail, &t.ContactPhone, &t.Address, &t.TaxID, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
 			&plan.ID, &plan.Name, &plan.MaxUsers, &plan.MaxServices, &plan.Price, &plan.Features, &plan.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -103,18 +83,22 @@ func (r *TenantRepo) List(ctx context.Context, limit, offset int) ([]*domain.Ten
 
 func (r *TenantRepo) Update(ctx context.Context, id uuid.UUID, input domain.UpdateTenantInput) (*domain.Tenant, error) {
 	var t domain.Tenant
+	// Contact fields: NULL param keeps the current value, '' clears it.
 	err := r.db.QueryRow(ctx, `
 		UPDATE tenants SET
 			name          = COALESCE($2, name),
-			domain        = COALESCE($3, domain),
-			status        = COALESCE($4, status),
-			config        = COALESCE($5, config),
-			trial_ends_at = COALESCE($6, trial_ends_at),
+			contact_email = NULLIF(COALESCE($3, contact_email), ''),
+			contact_phone = NULLIF(COALESCE($4, contact_phone), ''),
+			address       = NULLIF(COALESCE($5, address), ''),
+			tax_id        = NULLIF(COALESCE($6, tax_id), ''),
+			status        = COALESCE($7, status),
+			config        = COALESCE($8, config),
+			trial_ends_at = COALESCE($9, trial_ends_at),
 			updated_at    = NOW()
 		WHERE id = $1
-		RETURNING id, name, domain, plan_id, status, config, trial_ends_at, created_at, updated_at
-	`, id, input.Name, input.Domain, input.Status, input.Config, input.TrialEndsAt).
-		Scan(&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt)
+		RETURNING id, name, contact_email, contact_phone, address, tax_id, plan_id, status, config, trial_ends_at, created_at, updated_at
+	`, id, input.Name, input.ContactEmail, input.ContactPhone, input.Address, input.TaxID, input.Status, input.Config, input.TrialEndsAt).
+		Scan(&t.ID, &t.Name, &t.ContactEmail, &t.ContactPhone, &t.Address, &t.TaxID, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("update tenant: %w", err)
 	}
@@ -138,7 +122,7 @@ func (r *TenantRepo) ListByService(ctx context.Context, serviceIdentifier string
 	serviceID, parseErr := uuid.Parse(serviceIdentifier)
 	if parseErr == nil {
 		rows, err = r.db.Query(ctx, `
-			SELECT DISTINCT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at
+			SELECT DISTINCT t.id, t.name, t.contact_email, t.contact_phone, t.address, t.tax_id, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at
 			FROM tenants t
 			JOIN tenant_portals p ON p.tenant_id = t.id
 			JOIN portal_services ps ON ps.portal_id = p.id
@@ -151,7 +135,7 @@ func (r *TenantRepo) ListByService(ctx context.Context, serviceIdentifier string
 		`, serviceID)
 	} else {
 		rows, err = r.db.Query(ctx, `
-			SELECT DISTINCT t.id, t.name, t.domain, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at
+			SELECT DISTINCT t.id, t.name, t.contact_email, t.contact_phone, t.address, t.tax_id, t.plan_id, t.status, t.config, t.trial_ends_at, t.created_at, t.updated_at
 			FROM tenants t
 			JOIN tenant_portals p ON p.tenant_id = t.id
 			JOIN portal_services ps ON ps.portal_id = p.id
@@ -172,7 +156,7 @@ func (r *TenantRepo) ListByService(ctx context.Context, serviceIdentifier string
 	for rows.Next() {
 		var t domain.Tenant
 		if err := rows.Scan(
-			&t.ID, &t.Name, &t.Domain, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
+			&t.ID, &t.Name, &t.ContactEmail, &t.ContactPhone, &t.Address, &t.TaxID, &t.PlanID, &t.Status, &t.Config, &t.TrialEndsAt, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan tenant by service: %w", err)
 		}

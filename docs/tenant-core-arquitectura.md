@@ -27,7 +27,7 @@ El **Tenant Core** es el componente central responsable de gestionar múltiples 
 ### 1.1 Responsabilidades del Core
 
 - Registro y gestión del ciclo de vida de tenants
-- Resolución de tenant a partir del request (dominio, header, JWT)
+- Resolución de tenant a partir del request (JWT, header `X-Tenant-ID`)
 - Gestión del catálogo de servicios disponibles en la plataforma
 - Control de qué servicios tiene habilitados cada tenant y si son públicos o privados
 - Exposición de configuración pública para el arranque del Shell (sin auth)
@@ -78,7 +78,7 @@ El **Tenant Core** es el componente central responsable de gestionar múltiples 
 ```
 Shell arranca
      ↓
-GET /api/v1/public/config    ← sin auth, por dominio/subdominio
+GET /api/v1/public/config    ← sin auth, por header X-Tenant-ID
      ↓
 ¿MFEs públicos disponibles?
      ├── SI → carga MFE público directamente (sin login)
@@ -142,7 +142,10 @@ CREATE TABLE tenants (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   slug          VARCHAR(100) NOT NULL UNIQUE,  -- "acme-corp" (usado en URLs)
   name          VARCHAR(255) NOT NULL,
-  domain        VARCHAR(255) UNIQUE,           -- dominio personalizado opcional
+  contact_email VARCHAR(255),                  -- email de contacto de la cuenta (opcional)
+  contact_phone VARCHAR(30),                   -- teléfono de contacto (opcional)
+  address       TEXT,                          -- dirección postal (opcional)
+  tax_id        VARCHAR(11),                   -- CUIT/CUIL, 11 dígitos sin guiones (opcional)
   logo_url      VARCHAR(500),                  -- logo para pantalla de login
   plan_id       UUID NOT NULL REFERENCES plans(id),
   status        VARCHAR(20) NOT NULL DEFAULT 'active'
@@ -154,7 +157,6 @@ CREATE TABLE tenants (
 );
 
 CREATE INDEX idx_tenants_slug   ON tenants(slug);
-CREATE INDEX idx_tenants_domain ON tenants(domain);
 CREATE INDEX idx_tenants_status ON tenants(status);
 ```
 
@@ -379,9 +381,7 @@ require (
 GET /api/v1/public/config
 ```
 
-Sin autenticación. El tenant se resuelve por:
-1. Subdominio del `Host` header (`acme.app.com` → slug `acme`)
-2. Query param `?tenant=acme` (fallback para desarrollo)
+Sin autenticación. El tenant se resuelve por el header `X-Tenant-ID` (UUID). Los dominios pertenecen a los portales (`tenant_portals.domain`), no al tenant; `tenants.domain` se eliminó en la migración 037.
 
 ```json
 // Response 200
@@ -467,7 +467,10 @@ Toda la información del usuario viene de los claims del JWT. No hay query a tab
   "slug": "acme-corp",
   "name": "Acme Corp",
   "plan_id": "uuid",
-  "domain": "acme.app.com",
+  "contact_email": "admin@acme.com",
+  "contact_phone": "+54 11 4555-1234",
+  "address": "Av. Corrientes 1234, CABA",
+  "tax_id": "20-12345678-6",
   "logo_url": "https://cdn.x.com/acme/logo.png"
 }
 ```
@@ -580,10 +583,9 @@ r.Group(func(r chi.Router) {
 Orden de resolución para rutas autenticadas:
 
 1. Claim `tenant_id` del JWT
-2. Header `X-Tenant-Slug`
-3. Subdominio del `Host`
+2. Header `X-Tenant-ID`
 
-Para `/public/config` (sin JWT), solo por subdominio o query param `?tenant=`.
+Para `/public/config` (sin JWT), solo por header `X-Tenant-ID`. La resolución por `Host`/dominio del tenant se eliminó junto con `tenants.domain` (migración 037).
 
 ---
 

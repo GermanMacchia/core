@@ -18,7 +18,7 @@ El componente central de la plataforma. Gestiona el catálogo de tenants y servi
 - `GET /api/v1/public/config` — configuración pública para el arranque del Shell (sin auth, resuelve el portal por dominio)
 - `GET /api/v1/me/context` — contexto autenticado: tenant + portal activo + servicios + rol del usuario
 - Validación de JWT (verifica, nunca firma)
-- Rate limiting y resolución de tenant/portal por dominio, header o JWT
+- Rate limiting y resolución de tenant por header `X-Tenant-ID` o JWT (los dominios pertenecen a los portales)
 
 **Stack:** Go 1.22 · Chi · pgx/v5 · Redis · Zap  
 **Base de datos:** PostgreSQL `core_db` (plans, tenants, services, tenant_services, tenant_portals, portal_services, users, refresh_tokens, audit_logs)

@@ -27,31 +27,42 @@ type Plan struct {
 }
 
 type Tenant struct {
-	ID          uuid.UUID    `json:"id"`
-	Name        string       `json:"name"`
-	Domain      *string      `json:"domain,omitempty"`
-	PlanID      uuid.UUID    `json:"plan_id"`
-	Plan        *Plan        `json:"plan,omitempty"`
-	Status      TenantStatus `json:"status"`
-	Config      JSONMap      `json:"config"`
-	TrialEndsAt *time.Time   `json:"trial_ends_at,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
+	ID           uuid.UUID    `json:"id"`
+	Name         string       `json:"name"`
+	ContactEmail *string      `json:"contact_email,omitempty"`
+	ContactPhone *string      `json:"contact_phone,omitempty"`
+	Address      *string      `json:"address,omitempty"`
+	TaxID        *string      `json:"tax_id,omitempty"`
+	PlanID       uuid.UUID    `json:"plan_id"`
+	Plan         *Plan        `json:"plan,omitempty"`
+	Status       TenantStatus `json:"status"`
+	Config       JSONMap      `json:"config"`
+	TrialEndsAt  *time.Time   `json:"trial_ends_at,omitempty"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
 }
 
 type CreateTenantInput struct {
-	Name        string     `json:"name"`
-	Domain      *string    `json:"domain,omitempty"`
-	PlanID      uuid.UUID  `json:"plan_id"`
-	TrialEndsAt *time.Time `json:"trial_ends_at,omitempty"`
+	Name         string     `json:"name"`
+	ContactEmail *string    `json:"contact_email,omitempty"`
+	ContactPhone *string    `json:"contact_phone,omitempty"`
+	Address      *string    `json:"address,omitempty"`
+	TaxID        *string    `json:"tax_id,omitempty"`
+	PlanID       uuid.UUID  `json:"plan_id"`
+	TrialEndsAt  *time.Time `json:"trial_ends_at,omitempty"`
 }
 
+// UpdateTenantInput follows patch semantics: a nil field is left unchanged.
+// For the optional contact fields, an empty string clears the stored value.
 type UpdateTenantInput struct {
-	Name        *string       `json:"name,omitempty"`
-	Domain      *string       `json:"domain,omitempty"`
-	Status      *TenantStatus `json:"status,omitempty"`
-	Config      JSONMap       `json:"config,omitempty"`
-	TrialEndsAt *time.Time    `json:"trial_ends_at,omitempty"`
+	Name         *string       `json:"name,omitempty"`
+	ContactEmail *string       `json:"contact_email,omitempty"`
+	ContactPhone *string       `json:"contact_phone,omitempty"`
+	Address      *string       `json:"address,omitempty"`
+	TaxID        *string       `json:"tax_id,omitempty"`
+	Status       *TenantStatus `json:"status,omitempty"`
+	Config       JSONMap       `json:"config,omitempty"`
+	TrialEndsAt  *time.Time    `json:"trial_ends_at,omitempty"`
 }
 
 type JSONMap map[string]any
@@ -59,7 +70,6 @@ type JSONMap map[string]any
 type TenantRepository interface {
 	Create(ctx context.Context, input CreateTenantInput) (*Tenant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*Tenant, error)
-	GetByDomain(ctx context.Context, domain string) (*Tenant, error)
 	List(ctx context.Context, limit, offset int) ([]*Tenant, error)
 	ListByService(ctx context.Context, serviceIdentifier string) ([]*Tenant, error)
 	Update(ctx context.Context, id uuid.UUID, input UpdateTenantInput) (*Tenant, error)

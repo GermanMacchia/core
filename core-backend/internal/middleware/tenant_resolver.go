@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/tu-org/core-backend/internal/cache"
@@ -56,15 +55,6 @@ func (m *TenantResolver) resolveTenant(r *http.Request) (*domain.Tenant, error) 
 		}
 	}
 
-	// 3. From Host header (domain-based resolution)
-	host := r.Host
-	if idx := strings.Index(host, ":"); idx > 0 {
-		host = host[:idx]
-	}
-	if host != "" && host != "localhost" {
-		return m.getTenantByDomain(r.Context(), host)
-	}
-
 	return nil, nil
 }
 
@@ -82,29 +72,11 @@ func (m *TenantResolver) getTenantByID(ctx context.Context, id uuid.UUID) (*doma
 	return t, nil
 }
 
-func (m *TenantResolver) getTenantByDomain(ctx context.Context, host string) (*domain.Tenant, error) {
-	key := cache.TenantDomainKey(host)
-	var tenant domain.Tenant
-	if err := m.cache.Get(ctx, key, &tenant); err == nil {
-		return &tenant, nil
-	}
-	t, err := m.repo.GetByDomain(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	_ = m.cache.Set(ctx, key, t, cache.TTLTenantConfig)
-	_ = m.cache.Set(ctx, cache.TenantKey(t.ID.String()), t, cache.TTLTenantConfig)
-	return t, nil
-}
-
 func TenantFromCtx(ctx context.Context) *domain.Tenant {
 	t, _ := ctx.Value(CtxKeyTenant).(*domain.Tenant)
 	return t
 }
 
-func InvalidateTenantCache(ctx context.Context, c *cache.Cache, tenantID string, tenantDomain string) {
+func InvalidateTenantCache(ctx context.Context, c *cache.Cache, tenantID string) {
 	_ = c.Del(ctx, cache.TenantKey(tenantID))
-	if tenantDomain != "" {
-		_ = c.Del(ctx, cache.TenantDomainKey(tenantDomain))
-	}
 }

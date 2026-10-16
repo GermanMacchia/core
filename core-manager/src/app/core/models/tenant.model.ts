@@ -37,7 +37,11 @@ export interface Plan {
 export interface Tenant {
 	id: string
 	name: string
-	domain?: string | null
+	contact_email?: string | null
+	contact_phone?: string | null
+	address?: string | null
+	// CUIT/CUIL stored as 11 digits, no dashes
+	tax_id?: string | null
 	plan_id: string
 	plan?: Plan
 	status: 'active' | 'suspended' | 'trial' | 'cancelled'
@@ -45,6 +49,27 @@ export interface Tenant {
 	trial_ends_at?: string | null
 	created_at: string
 	updated_at: string
+}
+
+export interface CreateTenantInput {
+	name: string
+	plan_id: string
+	contact_email?: string
+	contact_phone?: string
+	address?: string
+	tax_id?: string
+}
+
+// Patch semantics: omitted fields are left unchanged; an empty string clears
+// an optional contact field.
+export interface UpdateTenantInput {
+	name?: string
+	contact_email?: string
+	contact_phone?: string
+	address?: string
+	tax_id?: string
+	status?: string
+	config?: Record<string, unknown>
 }
 
 export interface Deployment {

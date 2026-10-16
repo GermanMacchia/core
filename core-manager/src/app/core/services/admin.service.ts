@@ -19,6 +19,8 @@ import type {
 	Deployment,
 	CreateDeploymentInput,
 	UpdateDeploymentInput,
+	CreateTenantInput,
+	UpdateTenantInput,
 } from '../models/tenant.model'
 import { CORE_API_URL as CORE_API } from '../config/api.config'
 
@@ -95,7 +97,7 @@ export class AdminService {
 		)
 	}
 
-	createTenant(body: { name: string; domain?: string; plan_id: string }) {
+	createTenant(body: CreateTenantInput) {
 		return this.http.post<ApiResponse<Tenant>>(`${CORE_API}/api/v1/tenants`, body, {
 			headers: this.headers,
 		})
@@ -107,7 +109,7 @@ export class AdminService {
 		})
 	}
 
-	updateTenant(id: string, body: { name?: string; domain?: string; status?: string; config?: Record<string, unknown> }) {
+	updateTenant(id: string, body: UpdateTenantInput) {
 		return this.http.patch<ApiResponse<Tenant>>(`${CORE_API}/api/v1/tenants/${id}`, body, {
 			headers: this.headers,
 		})

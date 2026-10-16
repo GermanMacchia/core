@@ -268,7 +268,10 @@ El shell usa `portal.config.login_slug` para saber a dónde redirigir al usuario
 {
   "name": "Acme Corp",
   "plan_id": "uuid-del-plan",
-  "domain": "acme.app.com"
+  "contact_email": "admin@acme.com",
+  "contact_phone": "+54 11 4555-1234",
+  "address": "Av. Corrientes 1234, CABA",
+  "tax_id": "20-12345678-6"
 }
 
 // Response 201
@@ -276,6 +279,10 @@ El shell usa `portal.config.login_slug` para saber a dónde redirigir al usuario
   "data": {
     "id": "uuid",
     "name": "Acme Corp",
+    "contact_email": "admin@acme.com",
+    "contact_phone": "+54 11 4555-1234",
+    "address": "Av. Corrientes 1234, CABA",
+    "tax_id": "20123456786",
     "status": "active",
     "plan_id": "uuid",
     "created_at": "2026-06-05T12:00:00Z"
@@ -290,9 +297,19 @@ El shell usa `portal.config.login_slug` para saber a dónde redirigir al usuario
 {
   "name": "Nuevo Nombre",
   "status": "suspended",
-  "domain": "nuevo.dominio.com"
+  "contact_email": "facturacion@acme.com",
+  "contact_phone": ""
 }
 ```
+
+Campos de contacto opcionales (`contact_email`, `contact_phone`, `address`, `tax_id`): se recortan espacios; en `POST` un valor vacío se guarda como `NULL`, en `PATCH` un campo omitido no cambia y un string vacío lo borra. Validaciones (400 si fallan):
+
+- `contact_email`: email válido (`net/mail`), sin nombre visible.
+- `contact_phone`: `^\+?[0-9 ()\-]{6,30}$` con al menos 6 dígitos.
+- `address`: máximo 500 caracteres.
+- `tax_id`: CUIT/CUIL argentino; se aceptan guiones, espacios o puntos, se guarda como 11 dígitos. Prefijo válido (20, 23, 24, 27, 30, 33, 34) y dígito verificador módulo 11 (`invalid CUIT/CUIL`).
+
+Los dominios pertenecen a los portales (`tenant_portals.domain`); `tenants.domain` se eliminó en la migración 037.
 
 ---
 

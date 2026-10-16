@@ -81,7 +81,6 @@ func (c *Cache) FlushDB(ctx context.Context) error {
 
 
 func TenantKey(id string) string          { return fmt.Sprintf("tenant:%s", id) }
-func TenantDomainKey(domain string) string { return fmt.Sprintf("tenant:domain:%s", domain) }
 func TenantServicesKey(id string) string  { return fmt.Sprintf("tenant:%s:services", id) }
 func TokenBlacklistKey(jti string) string { return fmt.Sprintf("token:blacklist:%s", jti) }
 func RateLimitKey(ip, endpoint string) string {

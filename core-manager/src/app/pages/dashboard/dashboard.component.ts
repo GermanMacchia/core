@@ -142,7 +142,7 @@ export class DashboardComponent implements OnInit {
 
 	columns: CompactListColumn<Tenant>[] = [
 		{ key: 'name', header: 'Nombre', type: 'custom' },
-		{ key: 'domain', header: 'Dominio', type: 'text', transform: t => t.domain ?? '—' },
+		{ key: 'contact_email', header: 'Email de contacto', type: 'text', transform: t => t.contact_email || '—' },
 		{ key: 'plan', header: 'Plan', type: 'text', transform: t => t.plan?.name ?? '—' },
 		{ key: 'status', header: 'Estado', type: 'custom' },
 		{ key: 'created_at', header: 'Creado', type: 'text', transform: t => this.fmtDate(t.created_at) },
