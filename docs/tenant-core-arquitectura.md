@@ -158,6 +158,14 @@ CREATE INDEX idx_tenants_domain ON tenants(domain);
 CREATE INDEX idx_tenants_status ON tenants(status);
 ```
 
+> Nota (migración 036): `mfe_url`, `version` y `api_url` ahora viven en una
+> tabla `deployments` aparte (`name` único, `url`, `api_url`, `version`,
+> `description`, `is_active`). `services` la referencia mediante
+> `deployment_id NOT NULL` (N servicios : 1 deployment); `services.slug` y
+> `services.is_internal` ya no existen. La API sigue devolviendo `mfe_url` /
+> `version` en los servicios, resueltos desde el deployment. El DDL de abajo es
+> el diseño original.
+
 #### `services`
 
 ```sql

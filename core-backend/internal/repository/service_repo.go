@@ -20,38 +20,60 @@ func NewServiceRepo(db *pgxpool.Pool) *ServiceRepo {
 	return &ServiceRepo{db: db}
 }
 
-func (r *ServiceRepo) Create(ctx context.Context, input domain.CreateServiceInput) (*domain.Service, error) {
+// serviceColumns is the shared projection for a domain.Service. mfe_url and
+// version are resolved from the linked deployment so the JSON shape stays
+// unchanged for existing consumers. Callers alias the services row as "s"
+// and the deployment as "d".
+const serviceColumns = `
+	s.id, s.name, s.deployment_id, d.name, d.url, d.version, s.description,
+	s.config, s.is_active, s.requires_instance, s.created_at, s.updated_at
+`
+
+func scanService(row rowScanner) (*domain.Service, error) {
 	var s domain.Service
-	err := r.db.QueryRow(ctx, `
-		INSERT INTO services (name, mfe_url, version, description, config, requires_instance)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, mfe_url, version, description, config, is_active, requires_instance, created_at, updated_at
-	`, input.Name, input.MFEURL, input.Version, input.Description, input.Config, input.RequiresInstance).
-		Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.RequiresInstance, &s.CreatedAt, &s.UpdatedAt)
+	if err := row.Scan(
+		&s.ID, &s.Name, &s.DeploymentID, &s.DeploymentName, &s.MFEURL, &s.Version, &s.Description,
+		&s.Config, &s.IsActive, &s.RequiresInstance, &s.CreatedAt, &s.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func (r *ServiceRepo) Create(ctx context.Context, input domain.CreateServiceInput) (*domain.Service, error) {
+	s, err := scanService(r.db.QueryRow(ctx, `
+		WITH s AS (
+			INSERT INTO services (name, deployment_id, description, config, requires_instance)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING *
+		)
+		SELECT `+serviceColumns+`
+		FROM s JOIN deployments d ON d.id = s.deployment_id
+	`, input.Name, input.DeploymentID, input.Description, input.Config, input.RequiresInstance))
 	if err != nil {
 		return nil, fmt.Errorf("create service: %w", err)
 	}
-	return &s, nil
+	return s, nil
 }
 
 func (r *ServiceRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Service, error) {
-	var s domain.Service
-	err := r.db.QueryRow(ctx, `
-		SELECT id, name, mfe_url, version, description, config, is_active, requires_instance, created_at, updated_at
-		FROM services WHERE id = $1
-	`, id).Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.RequiresInstance, &s.CreatedAt, &s.UpdatedAt)
+	s, err := scanService(r.db.QueryRow(ctx, `
+		SELECT `+serviceColumns+`
+		FROM services s JOIN deployments d ON d.id = s.deployment_id
+		WHERE s.id = $1
+	`, id))
 	if err != nil {
 		return nil, fmt.Errorf("get service by id: %w", err)
 	}
-	return &s, nil
+	return s, nil
 }
 
 func (r *ServiceRepo) List(ctx context.Context, onlyActive bool) ([]*domain.Service, error) {
-	q := `SELECT id, name, mfe_url, version, description, config, is_active, requires_instance, created_at, updated_at FROM services`
+	q := `SELECT ` + serviceColumns + ` FROM services s JOIN deployments d ON d.id = s.deployment_id`
 	if onlyActive {
-		q += ` WHERE is_active = TRUE`
+		q += ` WHERE s.is_active = TRUE`
 	}
-	q += ` ORDER BY name`
+	q += ` ORDER BY s.name`
 
 	rows, err := r.db.Query(ctx, q)
 	if err != nil {
@@ -61,39 +83,39 @@ func (r *ServiceRepo) List(ctx context.Context, onlyActive bool) ([]*domain.Serv
 
 	var services []*domain.Service
 	for rows.Next() {
-		var s domain.Service
-		if err := rows.Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.RequiresInstance, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		s, err := scanService(rows)
+		if err != nil {
 			return nil, err
 		}
-		services = append(services, &s)
+		services = append(services, s)
 	}
 	return services, rows.Err()
 }
 
 func (r *ServiceRepo) Update(ctx context.Context, id uuid.UUID, input domain.UpdateServiceInput) (*domain.Service, error) {
-	var s domain.Service
-	err := r.db.QueryRow(ctx, `
-		UPDATE services SET
-			name              = COALESCE($2, name),
-			mfe_url           = COALESCE($3, mfe_url),
-			version           = COALESCE($4, version),
-			description       = COALESCE($5, description),
-			is_active         = COALESCE($6, is_active),
-			requires_instance = COALESCE($7, requires_instance),
-			config            = CASE WHEN $8::jsonb IS NOT NULL THEN $8::jsonb ELSE config END,
-			updated_at        = NOW()
-		WHERE id = $1
-		RETURNING id, name, mfe_url, version, description, config, is_active, requires_instance, created_at, updated_at
-	`, id, input.Name, input.MFEURL, input.Version, input.Description, input.IsActive, input.RequiresInstance, input.Config).
-		Scan(&s.ID, &s.Name, &s.MFEURL, &s.Version, &s.Description, &s.Config, &s.IsActive, &s.RequiresInstance, &s.CreatedAt, &s.UpdatedAt)
+	s, err := scanService(r.db.QueryRow(ctx, `
+		WITH s AS (
+			UPDATE services SET
+				name              = COALESCE($2, name),
+				deployment_id     = COALESCE($3, deployment_id),
+				description       = COALESCE($4, description),
+				is_active         = COALESCE($5, is_active),
+				requires_instance = COALESCE($6, requires_instance),
+				config            = CASE WHEN $7::jsonb IS NOT NULL THEN $7::jsonb ELSE config END,
+				updated_at        = NOW()
+			WHERE id = $1
+			RETURNING *
+		)
+		SELECT `+serviceColumns+`
+		FROM s JOIN deployments d ON d.id = s.deployment_id
+	`, id, input.Name, input.DeploymentID, input.Description, input.IsActive, input.RequiresInstance, input.Config))
 	if err != nil {
 		return nil, fmt.Errorf("update service: %w", err)
 	}
-	return &s, nil
+	return s, nil
 }
 
 func (r *ServiceRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `UPDATE services SET is_active = FALSE, updated_at = NOW() WHERE id = $1`, id)
 	return err
 }
-

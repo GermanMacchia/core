@@ -17,6 +17,10 @@ var (
 	adminPortalID    = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	managerServiceID = uuid.MustParse("00000000-0000-0000-0000-000000000010")
 	loginServiceID   = uuid.MustParse("00000000-0000-0000-0000-000000000011")
+	// Fixed deployment ids; migration 036 backfills the same ids for
+	// pre-existing Manager/Login services.
+	managerDeploymentID = uuid.MustParse("00000000-0000-0000-0000-000000000020")
+	loginDeploymentID   = uuid.MustParse("00000000-0000-0000-0000-000000000021")
 )
 
 func Run(ctx context.Context, db *pgxpool.Pool, cfg config.SeedConfig, env string, log *zap.Logger) error {
@@ -79,6 +83,25 @@ func Run(ctx context.Context, db *pgxpool.Pool, cfg config.SeedConfig, env strin
 }
 
 func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, cfg config.SeedConfig, log *zap.Logger) error {
+	// Deployments the Login and Manager services rest on. SEED_*_MFE_URL keep
+	// their names but now feed deployments.url.
+	for _, d := range []struct {
+		id   uuid.UUID
+		name string
+		url  string
+	}{
+		{loginDeploymentID, "core-login", cfg.LoginMFEURL},
+		{managerDeploymentID, "core-manager", cfg.ManagerMFEURL},
+	} {
+		if _, err := db.Exec(ctx, `
+			INSERT INTO deployments (id, name, url)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (id) DO NOTHING
+		`, d.id, d.name, d.url); err != nil {
+			return err
+		}
+	}
+
 	// Login service (public, activates at / and /login)
 	loginConfig, err := json.Marshal(map[string]any{
 		"public": true,
@@ -87,10 +110,10 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 		return err
 	}
 	if _, err := db.Exec(ctx, `
-		INSERT INTO services (id, name, mfe_url, config)
+		INSERT INTO services (id, name, deployment_id, config)
 		VALUES ($1, 'Login', $2, $3)
 		ON CONFLICT (id) DO NOTHING
-	`, loginServiceID, cfg.LoginMFEURL, loginConfig); err != nil {
+	`, loginServiceID, loginDeploymentID, loginConfig); err != nil {
 		return err
 	}
 
@@ -101,10 +124,10 @@ func seedAdminPortal(ctx context.Context, db *pgxpool.Pool, tenantID uuid.UUID, 
 		return err
 	}
 	if _, err := db.Exec(ctx, `
-		INSERT INTO services (id, name, mfe_url, config)
+		INSERT INTO services (id, name, deployment_id, config)
 		VALUES ($1, 'Manager', $2, $3)
 		ON CONFLICT (id) DO NOTHING
-	`, managerServiceID, cfg.ManagerMFEURL, svcConfig); err != nil {
+	`, managerServiceID, managerDeploymentID, svcConfig); err != nil {
 		return err
 	}
 

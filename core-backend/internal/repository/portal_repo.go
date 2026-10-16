@@ -164,11 +164,12 @@ func (r *PortalRepo) AssignService(ctx context.Context, input domain.AssignPorta
 			u.service_id,
 			u.slug,
 			s.name,
-			s.mfe_url,
+			d.url AS mfe_url,
 			s.config || u.config_override AS config,
 			u.sort_order
 		FROM upsert u
 		JOIN services s ON s.id = u.service_id
+		JOIN deployments d ON d.id = s.deployment_id
 	`, input.PortalID, input.ServiceID, input.Slug, input.SortOrder, input.ExpiresAt).
 		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.Config, &ps.SortOrder)
 	if err != nil {
@@ -199,11 +200,12 @@ func (r *PortalRepo) UpdatePortalService(ctx context.Context, portalID, serviceI
 			u.service_id,
 			u.slug,
 			s.name,
-			s.mfe_url,
+			d.url AS mfe_url,
 			s.config || u.config_override AS config,
 			u.sort_order
 		FROM updated u
 		JOIN services s ON s.id = u.service_id
+		JOIN deployments d ON d.id = s.deployment_id
 	`, portalID, serviceID, input.Slug, sortOrder, input.ConfigOverride, input.ExpiresAt).
 		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.Config, &ps.SortOrder)
 	if err != nil {
@@ -226,11 +228,12 @@ func (r *PortalRepo) GetServices(ctx context.Context, portalID uuid.UUID) ([]*do
 			s.id,
 			ps.slug,
 			s.name,
-			s.mfe_url,
+			d.url AS mfe_url,
 			s.config || ps.config_override AS config,
 			ps.sort_order
 		FROM portal_services ps
 		JOIN services s ON s.id = ps.service_id
+		JOIN deployments d ON d.id = s.deployment_id
 		WHERE ps.portal_id  = $1
 		  AND ps.is_enabled = TRUE
 		  AND s.is_active   = TRUE
@@ -262,12 +265,13 @@ func (r *PortalRepo) ListServicesByTenant(ctx context.Context, tenantID uuid.UUI
 			s.id,
 			ps.slug,
 			s.name,
-			s.mfe_url,
+			d.url AS mfe_url,
 			s.config || ps.config_override AS config,
 			ps.sort_order
 		FROM portal_services ps
 		JOIN tenant_portals p ON p.id = ps.portal_id
 		JOIN services s       ON s.id = ps.service_id
+		JOIN deployments d    ON d.id = s.deployment_id
 		WHERE p.tenant_id  = $1
 		  AND ps.is_enabled = TRUE
 		  AND s.is_active   = TRUE

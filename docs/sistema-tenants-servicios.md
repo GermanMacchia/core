@@ -352,6 +352,7 @@ erDiagram
     TENANTS ||--o{ TENANT_SERVICES : "tenant_id"
     TENANTS ||--o{ TENANT_PORTALS : "tenant_id"
     TENANTS ||--o{ USERS : "tenant_id"
+    DEPLOYMENTS ||--o{ SERVICES : "deployment_id"
     SERVICES ||--o{ TENANT_SERVICES : "service_id"
     SERVICES ||--o{ PORTAL_SERVICES : "service_id"
     SERVICES ||--o{ ROLES : "service_id (nullable)"
@@ -388,14 +389,20 @@ erDiagram
         jsonb config
         timestamp trial_ends_at
     }
+    DEPLOYMENTS {
+        uuid id PK
+        string name UK
+        string url
+        string api_url
+        string version
+        bool is_active
+    }
     SERVICES {
         uuid id PK
         string name UK
-        string mfe_url
-        string version
+        uuid deployment_id FK
         jsonb config
         bool is_active
-        bool is_internal "TRUE para Manager"
     }
     TENANT_SERVICES {
         uuid id PK
@@ -494,7 +501,7 @@ erDiagram
 **Notas relevantes del schema:**
 - `tenants`, `services` y `tenant_portals` **no tienen columna `slug`** — fue eliminada en migraciones 009/014 y nunca restaurada. El slug hoy vive únicamente en `portal_services.slug` (por servicio-dentro-de-portal).
 - La migración 026 está genuinamente ausente en la secuencia 001–031 — no se pudo determinar la causa (¿renumeración, migración descartada?). Pendiente de confirmar con el equipo.
-- `services.is_internal` (migración 023) marca servicios como Manager como internos — usado indirectamente por el modelo de seed (ver §5).
+- La migración 036 introduce `deployments` (una app desplegada una sola vez por la plataforma, con una `url` canónica). Cada servicio se apoya en un deployment (`services.deployment_id NOT NULL`, N servicios : 1 deployment); `services.mfe_url`/`version` pasaron a `deployments.url`/`version`, y la API sigue devolviendo `mfe_url`/`version` resueltos vía JOIN. Se eliminó `services.is_internal` (migración 023): ningún código lo leía; el acceso interno se decide por grants sobre el servicio Manager (`…0010`).
 
 ---
 

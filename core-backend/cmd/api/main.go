@@ -55,6 +55,7 @@ func main() {
 	// Repositories
 	tenantRepo := repository.NewTenantRepo(pool)
 	serviceRepo := repository.NewServiceRepo(pool)
+	deploymentRepo := repository.NewDeploymentRepo(pool)
 	userRepo := repository.NewUserRepo(pool)
 	portalRepo := repository.NewPortalRepo(pool)
 	planRepo := repository.NewPlanRepo(pool)
@@ -71,11 +72,13 @@ func main() {
 	// Services
 	tenantSvc := service.NewTenantService(tenantRepo, userRepo)
 	serviceSvc := service.NewServiceSvc(serviceRepo)
+	deploymentSvc := service.NewDeploymentSvc(deploymentRepo)
 	faqSvc := service.NewFaqSvc(faqRepo)
 
 	// Handlers
 	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo, userServiceAccessRepo, serviceInstanceRepo, tenantServiceRepo)
 	serviceHandler := handler.NewServiceHandler(serviceSvc, roleRepo)
+	deploymentHandler := handler.NewDeploymentHandler(deploymentSvc)
 	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo, serviceRepo, tenantServiceRepo)
 	planHandler := handler.NewPlanHandler(planRepo)
 	configDefinitionHandler := handler.NewConfigDefinitionHandler(configDefinitionRepo)
@@ -183,6 +186,14 @@ func main() {
 			r.Post("/api/v1/services/{id}/roles", serviceHandler.CreateRole)
 			r.Patch("/api/v1/roles/{role_id}", serviceHandler.UpdateRole)
 			r.Delete("/api/v1/roles/{role_id}", serviceHandler.DeleteRole)
+
+			// Deployments (apps deployed once by the platform; services rest on them)
+			r.Get("/api/v1/deployments", deploymentHandler.List)
+			r.Get("/api/v1/deployments/{id}", deploymentHandler.Get)
+			r.Post("/api/v1/deployments", deploymentHandler.Create)
+			r.Patch("/api/v1/deployments/{id}", deploymentHandler.Update)
+			r.Delete("/api/v1/deployments/{id}", deploymentHandler.Delete)
+
 			r.Post("/api/v1/plans", planHandler.Create)
 			r.Patch("/api/v1/plans/{id}", planHandler.Update)
 			r.Delete("/api/v1/plans/{id}", planHandler.Delete)

@@ -37,6 +37,12 @@ export const routes: Routes = [
 					),
 			},
 			{
+				path: 'deployments',
+				canActivate: [superAdminGuard],
+				loadComponent: () =>
+					import('./pages/deployments/deployments.component').then(m => m.DeploymentsComponent),
+			},
+			{
 				path: 'services',
 				canActivate: [superAdminGuard],
 				loadComponent: () =>

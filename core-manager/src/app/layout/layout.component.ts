@@ -86,6 +86,26 @@ import { HelpModalComponent } from './help-modal.component'
 						</li>
 						<li>
 							<a
+								routerLink="/deployments"
+								routerLinkActive="active"
+								class="flex flex-nowrap tooltip-right"
+								[class.justify-start]="drawerOpen()"
+								[class.justify-center]="!drawerOpen()"
+								[class.pl-5]="drawerOpen()"
+								[class.px-0]="!drawerOpen()"
+								[class.gap-3]="drawerOpen()"
+								[class.tooltip]="!drawerOpen()"
+								[attr.data-tip]="!drawerOpen() ? 'Deploys' : null">
+								<div class="flex items-center justify-center min-w-6 w-6 shrink-0 text-lg">
+									<i class="bi bi-cloud-upload"></i>
+								</div>
+								@if (drawerOpen()) {
+									<span class="font-medium truncate text-left">Deploys</span>
+								}
+							</a>
+						</li>
+						<li>
+							<a
 								routerLink="/services"
 								routerLinkActive="active"
 								class="flex flex-nowrap tooltip-right"

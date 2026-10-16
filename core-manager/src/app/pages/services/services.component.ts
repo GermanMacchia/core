@@ -9,7 +9,7 @@ import {
 } from '@germanmacchia/angular-ui'
 import type { CompactListColumn, CompactListAction } from '@germanmacchia/angular-ui'
 import { AdminService } from '../../core/services/admin.service'
-import type { ConfigDefinition, RoleOption, Service } from '../../core/models/tenant.model'
+import type { ConfigDefinition, Deployment, RoleOption, Service } from '../../core/models/tenant.model'
 import { apiErrorMessage } from '../../core/utils/api-error'
 import { ConfigEditorComponent } from '../../shared/config-editor.component'
 import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } from '../../shared/config-fields'
@@ -68,12 +68,13 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 								<input formControlName="name" type="text" class="input input-bordered" placeholder="Mi Servicio">
 							</label>
 							<label class="form-control">
-								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Versión <span class="text-error text-xs">*</span></span></div>
-								<input formControlName="version" type="text" class="input input-bordered" placeholder="1.0.0">
-							</label>
-							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">MFE URL <span class="text-error text-xs">*</span></span></div>
-								<input formControlName="mfe_url" type="text" class="input input-bordered" placeholder="http://localhost:4200/remoteEntry.js">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Deploy <span class="text-error text-xs">*</span></span></div>
+								<select formControlName="deployment_id" class="select select-bordered">
+									<option value="" disabled>Seleccioná un deploy</option>
+									@for (d of deployments(); track d.id) {
+										<option [value]="d.id">{{ d.name }} ({{ d.version }})</option>
+									}
+								</select>
 							</label>
 							<label class="form-control md:col-span-2">
 								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
@@ -115,12 +116,12 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 								<input formControlName="name" type="text" class="input input-bordered" placeholder="Mi Servicio">
 							</label>
 							<label class="form-control">
-								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Versión</span></div>
-								<input formControlName="version" type="text" class="input input-bordered" placeholder="1.0.0">
-							</label>
-							<label class="form-control md:col-span-2">
-								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">MFE URL</span></div>
-								<input formControlName="mfe_url" type="text" class="input input-bordered" placeholder="http://localhost:4200/remoteEntry.js">
+								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Deploy</span></div>
+								<select formControlName="deployment_id" class="select select-bordered">
+									@for (d of deployments(); track d.id) {
+										<option [value]="d.id">{{ d.name }} ({{ d.version }})</option>
+									}
+								</select>
 							</label>
 							<label class="form-control md:col-span-2">
 								<div class="label pt-0 pb-2"><span class="label-text text-sm font-medium">Descripción</span></div>
@@ -215,6 +216,7 @@ export class ServicesComponent implements OnInit {
 	private infoModal = inject(InfoModalService)
 
 	services = signal<Service[]>([])
+	deployments = signal<Deployment[]>([])
 	loading = signal(true)
 	saving = signal(false)
 	showCreate = signal(false)
@@ -233,16 +235,14 @@ export class ServicesComponent implements OnInit {
 
 	createForm = this.fb.nonNullable.group({
 		name: ['', Validators.required],
-		version: ['1.0.0', Validators.required],
-		mfe_url: ['', Validators.required],
+		deployment_id: ['', Validators.required],
 		description: [''],
 		requires_instance: [true],
 	})
 
 	editForm = this.fb.nonNullable.group({
 		name: [''],
-		version: [''],
-		mfe_url: [''],
+		deployment_id: [''],
 		description: [''],
 		is_active: [true],
 		requires_instance: [true],
@@ -256,8 +256,8 @@ export class ServicesComponent implements OnInit {
 	columns: CompactListColumn<Service>[] = [
 		{ key: 'id', header: 'ID', type: 'custom' },
 		{ key: 'name', prop: 'name', header: 'Nombre', type: 'text' },
+		{ key: 'deployment', header: 'Deploy', type: 'text', transform: s => s.deployment_name ?? s.mfe_url },
 		{ key: 'version', prop: 'version', header: 'Versión', type: 'text' },
-		{ key: 'mfe_url', prop: 'mfe_url', header: 'MFE URL', type: 'text' },
 		{ key: 'description', header: 'Descripción', type: 'text', transform: s => s.description ?? '—' },
 		{ key: 'is_active', prop: 'is_active', header: 'Activo', type: 'boolean' },
 		{ key: 'requires_instance', prop: 'requires_instance', header: 'Requiere negocio', type: 'boolean' },
@@ -282,6 +282,16 @@ export class ServicesComponent implements OnInit {
 	ngOnInit() {
 		this.load()
 		this.loadConfigDefs()
+		this.loadDeployments()
+	}
+
+	loadDeployments() {
+		this.admin.listDeployments().subscribe({
+			next: res => this.deployments.set(res.data ?? []),
+			error: (err: HttpErrorResponse) => {
+				this.toast.toast({ severity: 'error', body: apiErrorMessage(err, 'Error al cargar los deploys.') })
+			},
+		})
 	}
 
 	copyId(id: string) {
@@ -325,8 +335,7 @@ export class ServicesComponent implements OnInit {
 			this.editTarget = event.item
 			this.editForm.patchValue({
 				name: event.item.name,
-				version: event.item.version,
-				mfe_url: event.item.mfe_url,
+				deployment_id: event.item.deployment_id,
 				description: event.item.description ?? '',
 				is_active: event.item.is_active,
 				requires_instance: event.item.requires_instance,
@@ -351,8 +360,7 @@ export class ServicesComponent implements OnInit {
 		this.saving.set(true)
 		this.admin.createService({
 			name: v.name,
-			version: v.version,
-			mfe_url: v.mfe_url,
+			deployment_id: v.deployment_id,
 			...(v.description ? { description: v.description } : {}),
 			config: buildConfigFromValues(this.createConfigValues(), this.configDefs()),
 			requires_instance: v.requires_instance,
@@ -382,8 +390,7 @@ export class ServicesComponent implements OnInit {
 			config: buildConfigFromValues(this.editConfigValues(), this.configDefs()),
 		}
 		if (v.name) body.name = v.name
-		if (v.version) body.version = v.version
-		if (v.mfe_url) body.mfe_url = v.mfe_url
+		if (v.deployment_id) body.deployment_id = v.deployment_id
 
 		this.saving.set(true)
 		this.admin.updateService(this.editTarget.id, body).subscribe({

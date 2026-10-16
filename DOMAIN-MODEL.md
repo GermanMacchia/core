@@ -26,11 +26,26 @@
         │ sort_order      │        ┌────────────────┐ ┌───────────────────┐
         └───┬─────────────┘        │    SERVICE      │ │  SERVICE_INSTANCE  │
             │ N:1                  │ id, name         │ │  id, tenant_svc_id │
-            └─────────────────────▶│ mfe_url          │ │  name, url          │
+            └─────────────────────▶│ deployment_id    │ │  name, url          │
                                     │ requires_instance│ │  ("el negocio")     │
                                     │ is_active        │ └────────────────────┘
+                                    └────────┬─────────┘
+                                             │ N:1
+                                             ▼
+                                    ┌──────────────────┐
+                                    │    DEPLOYMENT     │
+                                    │ id, name (único)  │
+                                    │ url, api_url      │
+                                    │ version, is_active│
                                     └──────────────────┘
 ```
+
+**DEPLOYMENT** (migración 036): una app desplegada una sola vez por la
+plataforma, con una `url` canónica. Un SERVICE (la oferta comercial) se apoya
+en exactamente un deployment; un deployment puede tener cero o varios
+servicios. La API sigue devolviendo `mfe_url` / `version` en los servicios,
+resueltos desde `deployments.url` / `deployments.version`. Se eliminó
+`services.is_internal`.
 
 ## Dos modos de bootstrap de un servicio
 

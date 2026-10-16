@@ -16,6 +16,9 @@ import type {
 	ServiceAccessGrant,
 	RoleOption,
 	ServiceInstance,
+	Deployment,
+	CreateDeploymentInput,
+	UpdateDeploymentInput,
 } from '../models/tenant.model'
 import { CORE_API_URL as CORE_API } from '../config/api.config'
 
@@ -216,6 +219,31 @@ export class AdminService {
 		)
 	}
 
+	// ── Deployments ───────────────────────────────────────────────────────────
+
+	listDeployments(all = true) {
+		const params = all ? '?all=true' : ''
+		return this.http.get<ApiResponse<Deployment[]>>(`${CORE_API}/api/v1/deployments${params}`, {
+			headers: this.headers,
+		})
+	}
+
+	createDeployment(body: CreateDeploymentInput) {
+		return this.http.post<ApiResponse<Deployment>>(`${CORE_API}/api/v1/deployments`, body, {
+			headers: this.headers,
+		})
+	}
+
+	updateDeployment(id: string, body: UpdateDeploymentInput) {
+		return this.http.patch<ApiResponse<Deployment>>(`${CORE_API}/api/v1/deployments/${id}`, body, {
+			headers: this.headers,
+		})
+	}
+
+	deleteDeployment(id: string) {
+		return this.http.delete(`${CORE_API}/api/v1/deployments/${id}`, { headers: this.headers })
+	}
+
 	// ── Services catalog ──────────────────────────────────────────────────────
 
 	listServices(all = true) {
@@ -227,9 +255,8 @@ export class AdminService {
 
 	createService(body: {
 		name: string
-		mfe_url: string
+		deployment_id: string
 		description?: string
-		version: string
 		config?: Record<string, unknown>
 		requires_instance: boolean
 	}) {
@@ -248,8 +275,7 @@ export class AdminService {
 		id: string,
 		body: {
 			name?: string
-			mfe_url?: string
-			version?: string
+			deployment_id?: string
 			description?: string
 			is_active?: boolean
 			config?: Record<string, unknown>

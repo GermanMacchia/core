@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tu-org/core-backend/internal/domain"
 	"github.com/tu-org/core-backend/internal/repository"
 	"github.com/tu-org/core-backend/internal/service"
@@ -38,12 +39,9 @@ func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
-	if input.Name == "" || input.MFEURL == "" {
-		response.BadRequest(w, "name and mfe_url are required")
+	if input.Name == "" || input.DeploymentID == uuid.Nil {
+		response.BadRequest(w, "name and deployment_id are required")
 		return
-	}
-	if input.Version == "" {
-		input.Version = "1.0.0"
 	}
 	if input.RequiresInstance == nil {
 		t := true
@@ -52,6 +50,10 @@ func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	svc, err := h.svc.Create(r.Context(), input)
 	if err != nil {
+		if isUnknownDeployment(err) {
+			response.BadRequest(w, "deployment_id does not reference an existing deployment")
+			return
+		}
 		response.InternalError(w)
 		return
 	}
@@ -83,12 +85,28 @@ func (h *ServiceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
+	if input.DeploymentID != nil && *input.DeploymentID == uuid.Nil {
+		response.BadRequest(w, "deployment_id cannot be empty")
+		return
+	}
 	svc, err := h.svc.Update(r.Context(), id, input)
 	if err != nil {
+		if isUnknownDeployment(err) {
+			response.BadRequest(w, "deployment_id does not reference an existing deployment")
+			return
+		}
 		response.InternalError(w)
 		return
 	}
 	response.JSON(w, http.StatusOK, svc)
+}
+
+// isUnknownDeployment reports whether err is the services.deployment_id FK
+// violation (SQLSTATE 23503), i.e. the caller referenced a deployment that
+// does not exist.
+func isUnknownDeployment(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 func (h *ServiceHandler) Delete(w http.ResponseWriter, r *http.Request) {

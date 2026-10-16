@@ -46,6 +46,7 @@ SEED_ADMIN_PASSWORD=password_inicial
 SEED_AUTH_API_URL=http://localhost:8081
 SEED_LOGIN_MFE_URL=http://localhost:5173/src/main.ts
 SEED_MANAGER_MFE_URL=http://localhost:4201/src/main.single-spa.ts
+# SEED_*_MFE_URL definen la url de los deployments core-login / core-manager del seed
 ```
 
 ---
@@ -357,6 +358,29 @@ El shell usa `portal.config.login_slug` para saber a dónde redirigir al usuario
 
 ---
 
+### Deployments
+
+Un deployment es una app desplegada una sola vez por la plataforma, con una `url` canónica (migración 036). Cada servicio se apoya en un deployment (`services.deployment_id`); las respuestas de servicios siguen incluyendo `mfe_url` y `version`, resueltos desde el deployment. Eliminar un deployment que todavía referencian servicios devuelve `409`.
+
+| Método | Ruta | Auth | Rol |
+|---|---|---|---|
+| `GET` | `/deployments[?all=true]` | Bearer JWT | superadmin |
+| `GET` | `/deployments/:id` | Bearer JWT | superadmin |
+| `POST` | `/deployments` | Bearer JWT | superadmin |
+| `PATCH` | `/deployments/:id` | Bearer JWT | superadmin |
+| `DELETE` | `/deployments/:id` | Bearer JWT | superadmin |
+
+```json
+// POST /deployments
+{
+  "name": "billing-mfe",
+  "url": "https://cdn.tu-org.com/billing/remoteEntry.js",
+  "version": "1.0.0"
+}
+```
+
+---
+
 ### Catálogo de servicios
 
 | Método | Ruta | Auth | Rol |
@@ -373,8 +397,7 @@ El shell usa `portal.config.login_slug` para saber a dónde redirigir al usuario
 // Request
 {
   "name": "Billing",
-  "mfe_url": "https://cdn.tu-org.com/billing/remoteEntry.js",
-  "version": "1.0.0",
+  "deployment_id": "<uuid de un deployment existente>",
   "description": "Módulo de facturación",
   "config": {
     "public": false,

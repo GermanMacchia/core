@@ -139,10 +139,11 @@ func (r *PlanRepo) Delete(ctx context.Context, id uuid.UUID) error {
 func (r *PlanRepo) ListServicePricing(ctx context.Context, planID uuid.UUID) ([]*domain.PlanServicePricing, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT psp.id, psp.plan_id, psp.service_id,
-		       s.name, s.mfe_url, s.version, s.is_active,
+		       s.name, s.deployment_id, d.url, d.version, s.is_active,
 		       psp.price, psp.is_included, psp.created_at
 		FROM plan_service_pricing psp
 		JOIN services s ON s.id = psp.service_id
+		JOIN deployments d ON d.id = s.deployment_id
 		WHERE psp.plan_id = $1
 		ORDER BY s.name
 	`, planID)
@@ -157,7 +158,7 @@ func (r *PlanRepo) ListServicePricing(ctx context.Context, planID uuid.UUID) ([]
 		var svc domain.Service
 		if err := rows.Scan(
 			&psp.ID, &psp.PlanID, &psp.ServiceID,
-			&svc.Name, &svc.MFEURL, &svc.Version, &svc.IsActive,
+			&svc.Name, &svc.DeploymentID, &svc.MFEURL, &svc.Version, &svc.IsActive,
 			&psp.Price, &psp.IsIncluded, &psp.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -186,8 +187,11 @@ func (r *PlanRepo) SetServicePricing(ctx context.Context, planID uuid.UUID, inpu
 
 	var svc domain.Service
 	if err := r.db.QueryRow(ctx, `
-		SELECT id, name, mfe_url, version, is_active FROM services WHERE id = $1
-	`, input.ServiceID).Scan(&svc.ID, &svc.Name, &svc.MFEURL, &svc.Version, &svc.IsActive); err == nil {
+		SELECT s.id, s.name, s.deployment_id, d.url, d.version, s.is_active
+		FROM services s
+		JOIN deployments d ON d.id = s.deployment_id
+		WHERE s.id = $1
+	`, input.ServiceID).Scan(&svc.ID, &svc.Name, &svc.DeploymentID, &svc.MFEURL, &svc.Version, &svc.IsActive); err == nil {
 		psp.Service = &svc
 	}
 

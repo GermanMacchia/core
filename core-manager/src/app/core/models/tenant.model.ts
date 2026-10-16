@@ -47,9 +47,41 @@ export interface Tenant {
 	updated_at: string
 }
 
+export interface Deployment {
+	id: string
+	name: string
+	url: string
+	api_url?: string | null
+	version: string
+	description?: string | null
+	is_active: boolean
+	created_at: string
+	updated_at: string
+}
+
+export interface CreateDeploymentInput {
+	name: string
+	url: string
+	api_url?: string | null
+	version?: string
+	description?: string | null
+}
+
+export interface UpdateDeploymentInput {
+	name?: string
+	url?: string
+	api_url?: string | null
+	version?: string
+	description?: string | null
+	is_active?: boolean
+}
+
 export interface Service {
 	id: string
 	name: string
+	deployment_id: string
+	deployment_name?: string
+	// Resolved from the linked deployment (url / version)
 	mfe_url: string
 	version: string
 	description?: string | null
