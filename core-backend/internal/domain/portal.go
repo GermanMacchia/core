@@ -24,9 +24,10 @@ type PortalService struct {
 	ServiceID uuid.UUID `json:"id"`
 	Slug      string    `json:"slug"`
 	Name      string    `json:"name"`
-	MFEURL    string    `json:"mfe_url"`
-	Config    JSONMap   `json:"config"`
-	SortOrder int       `json:"sort_order"`
+	MFEURL         string    `json:"mfe_url"`
+	DeploymentName string    `json:"deployment_name"`
+	Config         JSONMap   `json:"config"`
+	SortOrder      int       `json:"sort_order"`
 }
 
 type CreatePortalInput struct {

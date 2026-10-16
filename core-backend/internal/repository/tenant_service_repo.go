@@ -25,7 +25,7 @@ func NewTenantServiceRepo(db *pgxpool.Pool) *TenantServiceRepo {
 // when the LEFT JOIN finds no service_instances row; si.config is additionally
 // wrapped in COALESCE so it always scans as valid (possibly empty) JSON.
 const tenantServiceSelect = `
-	SELECT s.id, s.name, d.url, ts.is_enabled, s.requires_instance,
+	SELECT s.id, s.name, d.url, d.name, ts.is_enabled, s.requires_instance,
 	       si.id, si.name, si.slug, COALESCE(si.config, '{}'::jsonb)
 	FROM tenant_services ts
 	JOIN services s ON s.id = ts.service_id
@@ -48,7 +48,7 @@ func scanTenantService(row rowScanner) (*domain.TenantService, error) {
 		instanceCfg  domain.JSONMap
 	)
 	if err := row.Scan(
-		&ts.ID, &ts.Name, &ts.MFEURL, &ts.IsEnabled, &ts.RequiresInstance,
+		&ts.ID, &ts.Name, &ts.MFEURL, &ts.DeploymentName, &ts.IsEnabled, &ts.RequiresInstance,
 		&instanceID, &instanceName, &instanceSlug, &instanceCfg,
 	); err != nil {
 		return nil, err

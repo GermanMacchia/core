@@ -165,13 +165,14 @@ func (r *PortalRepo) AssignService(ctx context.Context, input domain.AssignPorta
 			u.slug,
 			s.name,
 			d.url AS mfe_url,
+			d.name AS deployment_name,
 			s.config || u.config_override AS config,
 			u.sort_order
 		FROM upsert u
 		JOIN services s ON s.id = u.service_id
 		JOIN deployments d ON d.id = s.deployment_id
 	`, input.PortalID, input.ServiceID, input.Slug, input.SortOrder, input.ExpiresAt).
-		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.Config, &ps.SortOrder)
+		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.DeploymentName, &ps.Config, &ps.SortOrder)
 	if err != nil {
 		return nil, fmt.Errorf("assign portal service: %w", err)
 	}
@@ -201,13 +202,14 @@ func (r *PortalRepo) UpdatePortalService(ctx context.Context, portalID, serviceI
 			u.slug,
 			s.name,
 			d.url AS mfe_url,
+			d.name AS deployment_name,
 			s.config || u.config_override AS config,
 			u.sort_order
 		FROM updated u
 		JOIN services s ON s.id = u.service_id
 		JOIN deployments d ON d.id = s.deployment_id
 	`, portalID, serviceID, input.Slug, sortOrder, input.ConfigOverride, input.ExpiresAt).
-		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.Config, &ps.SortOrder)
+		Scan(&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.DeploymentName, &ps.Config, &ps.SortOrder)
 	if err != nil {
 		return nil, fmt.Errorf("update portal service: %w", err)
 	}
@@ -229,6 +231,7 @@ func (r *PortalRepo) GetServices(ctx context.Context, portalID uuid.UUID) ([]*do
 			ps.slug,
 			s.name,
 			d.url AS mfe_url,
+			d.name AS deployment_name,
 			s.config || ps.config_override AS config,
 			ps.sort_order
 		FROM portal_services ps
@@ -248,7 +251,7 @@ func (r *PortalRepo) GetServices(ctx context.Context, portalID uuid.UUID) ([]*do
 	for rows.Next() {
 		var ps domain.PortalService
 		if err := rows.Scan(
-			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL,
+			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.DeploymentName,
 			&ps.Config, &ps.SortOrder,
 		); err != nil {
 			return nil, err
@@ -266,6 +269,7 @@ func (r *PortalRepo) ListServicesByTenant(ctx context.Context, tenantID uuid.UUI
 			ps.slug,
 			s.name,
 			d.url AS mfe_url,
+			d.name AS deployment_name,
 			s.config || ps.config_override AS config,
 			ps.sort_order
 		FROM portal_services ps
@@ -286,7 +290,7 @@ func (r *PortalRepo) ListServicesByTenant(ctx context.Context, tenantID uuid.UUI
 	for rows.Next() {
 		var ps domain.PortalService
 		if err := rows.Scan(
-			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL,
+			&ps.ServiceID, &ps.Slug, &ps.Name, &ps.MFEURL, &ps.DeploymentName,
 			&ps.Config, &ps.SortOrder,
 		); err != nil {
 			return nil, err

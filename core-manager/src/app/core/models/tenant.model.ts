@@ -110,6 +110,7 @@ export interface PortalService {
 	slug: string
 	name: string
 	mfe_url: string
+	deployment_name: string
 	config: Record<string, unknown>
 	sort_order: number
 }
@@ -125,6 +126,7 @@ export interface TenantService {
 	id: string // service_id serializado como "id" por el backend
 	name: string
 	mfe_url: string
+	deployment_name: string
 	is_enabled: boolean
 	requires_instance: boolean
 	instance?: ServiceInstance

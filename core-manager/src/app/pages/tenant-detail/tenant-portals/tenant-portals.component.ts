@@ -286,7 +286,7 @@ export class TenantPortalsComponent implements OnInit {
     { key: 'name', prop: 'name', header: 'Servicio', type: 'text' },
     { key: 'slug', prop: 'slug', header: 'Slug', type: 'text' },
     { key: 'sort_order', prop: 'sort_order', header: 'Orden', type: 'text' },
-    { key: 'mfe_url', prop: 'mfe_url', header: 'MFE URL', type: 'text' },
+    { key: 'deployment_name', prop: 'deployment_name', header: 'Deploy', type: 'text' },
   ]
 
   portalServiceActions: CompactListAction<PortalService>[] = [

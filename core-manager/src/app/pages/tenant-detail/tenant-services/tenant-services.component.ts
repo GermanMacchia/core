@@ -99,7 +99,7 @@ export class TenantServicesComponent implements OnInit {
 
   serviceColumns: CompactListColumn<TenantService>[] = [
     { key: 'name', prop: 'name', header: 'Servicio', type: 'text' },
-    { key: 'mfe_url', prop: 'mfe_url', header: 'MFE URL', type: 'text' },
+    { key: 'deployment_name', prop: 'deployment_name', header: 'Deploy', type: 'text' },
     { key: 'instance', header: 'Negocio', type: 'text', transform: s => s.instance?.name ?? '—' },
     { key: 'slug', header: 'Slug', type: 'text', transform: s => s.instance?.slug ?? '—' },
   ]

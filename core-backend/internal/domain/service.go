@@ -47,7 +47,8 @@ type TenantService struct {
 	ID               uuid.UUID              `json:"id"` // service_id
 	Name             string                 `json:"name"`
 	MFEURL           string                 `json:"mfe_url"`
-	IsEnabled        bool                   `json:"is_enabled"`
+	DeploymentName   string                 `json:"deployment_name"`
+	IsEnabled       bool                   `json:"is_enabled"`
 	RequiresInstance bool                   `json:"requires_instance"`
 	Instance         *TenantServiceInstance `json:"instance,omitempty"`
 }
