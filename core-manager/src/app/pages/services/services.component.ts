@@ -81,7 +81,7 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 								<textarea formControlName="description" class="textarea textarea-bordered textarea-sm resize-none" rows="2"></textarea>
 							</label>
 							<label class="label cursor-pointer justify-start gap-2 md:col-span-2">
-								<input formControlName="requires_instance" type="checkbox" class="checkbox checkbox-sm">
+								<input formControlName="requires_business" type="checkbox" class="checkbox checkbox-sm">
 								<span class="label-text text-sm font-medium">Requiere negocio</span>
 							</label>
 						</div>
@@ -135,7 +135,7 @@ import { buildConfigFromValues, defaultConfigValues, existingConfigToValues } fr
 								</select>
 							</label>
 							<label class="label cursor-pointer justify-start gap-2 md:col-span-2">
-								<input formControlName="requires_instance" type="checkbox" class="checkbox checkbox-sm">
+								<input formControlName="requires_business" type="checkbox" class="checkbox checkbox-sm">
 								<span class="label-text text-sm font-medium">Requiere negocio</span>
 							</label>
 						</div>
@@ -237,7 +237,7 @@ export class ServicesComponent implements OnInit {
 		name: ['', Validators.required],
 		deployment_id: ['', Validators.required],
 		description: [''],
-		requires_instance: [true],
+		requires_business: [true],
 	})
 
 	editForm = this.fb.nonNullable.group({
@@ -245,7 +245,7 @@ export class ServicesComponent implements OnInit {
 		deployment_id: [''],
 		description: [''],
 		is_active: [true],
-		requires_instance: [true],
+		requires_business: [true],
 	})
 
 	roleForm = this.fb.nonNullable.group({
@@ -260,7 +260,7 @@ export class ServicesComponent implements OnInit {
 		{ key: 'version', prop: 'version', header: 'Versión', type: 'text' },
 		{ key: 'description', header: 'Descripción', type: 'text', transform: s => s.description ?? '—' },
 		{ key: 'is_active', prop: 'is_active', header: 'Activo', type: 'boolean' },
-		{ key: 'requires_instance', prop: 'requires_instance', header: 'Requiere negocio', type: 'boolean' },
+		{ key: 'requires_business', prop: 'requires_business', header: 'Requiere negocio', type: 'boolean' },
 	]
 
 	actions: CompactListAction<Service>[] = [
@@ -338,7 +338,7 @@ export class ServicesComponent implements OnInit {
 				deployment_id: event.item.deployment_id,
 				description: event.item.description ?? '',
 				is_active: event.item.is_active,
-				requires_instance: event.item.requires_instance,
+				requires_business: event.item.requires_business,
 			})
 			this.editConfigValues.set(existingConfigToValues(event.item.config ?? {}, this.configDefs()))
 			this.showEdit.set(true)
@@ -363,7 +363,7 @@ export class ServicesComponent implements OnInit {
 			deployment_id: v.deployment_id,
 			...(v.description ? { description: v.description } : {}),
 			config: buildConfigFromValues(this.createConfigValues(), this.configDefs()),
-			requires_instance: v.requires_instance,
+			requires_business: v.requires_business,
 		}).subscribe({
 			next: res => {
 				this.saving.set(false)
@@ -386,7 +386,7 @@ export class ServicesComponent implements OnInit {
 		const body: Parameters<AdminService['updateService']>[1] = {
 			description: v.description,
 			is_active: v.is_active,
-			requires_instance: v.requires_instance,
+			requires_business: v.requires_business,
 			config: buildConfigFromValues(this.editConfigValues(), this.configDefs()),
 		}
 		if (v.name) body.name = v.name

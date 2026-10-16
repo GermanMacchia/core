@@ -238,12 +238,12 @@ func (s *AuthService) resolveServices(ctx context.Context, user *domain.User) ([
 }
 
 // ResolveServiceAccess resolves a fresh user_service_access grant for the
-// given service/instance. It additively enriches /auth/validate responses
+// given service/business. It additively enriches /auth/validate responses
 // and never affects JWT-derived claims. A nil, nil result means "no fresh
-// grant resolved" (missing header, no grant, or ambiguous instance) — not
+// grant resolved" (missing header, no grant, or ambiguous business) — not
 // an error.
-func (s *AuthService) ResolveServiceAccess(ctx context.Context, userID, serviceID uuid.UUID, instanceID *uuid.UUID) (*domain.ResolvedAccess, error) {
-	return s.repo.ResolveServiceAccess(ctx, userID, serviceID, instanceID)
+func (s *AuthService) ResolveServiceAccess(ctx context.Context, userID, serviceID uuid.UUID, businessID *uuid.UUID) (*domain.ResolvedAccess, error) {
+	return s.repo.ResolveServiceAccess(ctx, userID, serviceID, businessID)
 }
 
 func generateSecureToken() (string, error) {

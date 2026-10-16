@@ -9,7 +9,7 @@ import (
 
 // RequireInternalAccess replaces RequireRole("superadmin") for
 // platform-operator-only routes. It grants access to callers holding a
-// user_service_access grant on the Manager/core-admin service instance
+// user_service_access grant on the Manager/core-admin business
 // (domain.PlatformTenantID, domain.ManagerServiceID) — i.e. "is internal
 // staff" — the grant-table-backed equivalent of the old
 // claims.Role == "superadmin" check. The JWT still carries the old claims

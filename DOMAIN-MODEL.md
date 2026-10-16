@@ -24,10 +24,10 @@
         │ service_id (FK) │                 │ N:1      │ 1:0..1
         │ slug, mfe_url   │                 ▼          ▼
         │ sort_order      │        ┌────────────────┐ ┌───────────────────┐
-        └───┬─────────────┘        │    SERVICE      │ │  SERVICE_INSTANCE  │
+        └───┬─────────────┘        │    SERVICE      │ │      BUSINESS      │
             │ N:1                  │ id, name         │ │  id, tenant_svc_id │
             └─────────────────────▶│ deployment_id    │ │  name, url          │
-                                    │ requires_instance│ │  ("el negocio")     │
+                                    │ requires_business│ │  ("el negocio")     │
                                     │ is_active        │ └────────────────────┘
                                     └────────┬─────────┘
                                              │ N:1
@@ -47,6 +47,11 @@ servicios. La API sigue devolviendo `mfe_url` / `version` en los servicios,
 resueltos desde `deployments.url` / `deployments.version`. Se eliminó
 `services.is_internal`.
 
+**BUSINESS** ("el negocio", migración 038): antes `service_instances`. La tabla
+pasó a llamarse `businesses`, `services.requires_instance` pasó a
+`requires_business` y `user_service_access.service_instance_id` pasó a
+`business_id`.
+
 ## Dos modos de bootstrap de un servicio
 
 - **Portal-bound**: el servicio se expone con marca/dominio propio de un tenant vía `PORTAL_SERVICE`. Un shell por portal (`VITE_PORTAL_ID`), descubre sus apps en `GET /api/v1/public/portals/{portal_id}`.
@@ -62,19 +67,19 @@ Capa adicional, por encima de `TENANT_SERVICE`, para el caso "quiero que este us
 ┌────────────────┐        ┌───────────────────────┐        ┌────────┐
 │      USER       │───────▶│  USER_SERVICE_ACCESS   │◀───────│  ROLE   │
 │ restrict_services│  1:N   │ user_id (FK)           │  N:1   │ service_id?│
-└────────────────┘        │ service_instance_id (FK)│        └────────┘
+└────────────────┘        │ business_id (FK)        │        └────────┘
                             │ role_id (FK)            │
                             └───────────┬─────────────┘
                                          │ N:1
                                          ▼
                                 ┌───────────────────┐
-                                │  SERVICE_INSTANCE   │
+                                │      BUSINESS       │
                                 └───────────────────┘
 ```
 
 - `USER.restrict_services = FALSE` (default): sin cambios — el usuario ve todos los `TENANT_SERVICE` habilitados del tenant, igual que antes.
 - `USER.restrict_services = TRUE`: el JWT solo incluye los servicios donde el usuario tiene un grant en `USER_SERVICE_ACCESS`. Sin grants + flag en `TRUE` = no ve ningún servicio directo (esperado, no es un bug).
-- `ROLE.service_id` (nullable): un rol pertenece a un servicio específico, o es global (`NULL`, ej. superadmin). Un trigger de DB (`enforce_role_service_match`) rechaza cualquier grant donde el rol no pertenezca al servicio de la instancia.
+- `ROLE.service_id` (nullable): un rol pertenece a un servicio específico, o es global (`NULL`, ej. superadmin). Un trigger de DB (`enforce_role_service_match`) rechaza cualquier grant donde el rol no pertenezca al servicio del negocio (`BUSINESS`).
 
 ### Hecho
 

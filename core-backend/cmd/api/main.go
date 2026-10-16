@@ -62,7 +62,7 @@ func main() {
 	configDefinitionRepo := repository.NewConfigDefinitionRepo(pool)
 	faqRepo := repository.NewFaqRepo(pool)
 	userServiceAccessRepo := repository.NewUserServiceAccessRepo(pool)
-	serviceInstanceRepo := repository.NewServiceInstanceRepo(pool)
+	businessRepo := repository.NewBusinessRepo(pool)
 	tenantServiceRepo := repository.NewTenantServiceRepo(pool)
 	roleRepo := repository.NewRoleRepo(pool)
 
@@ -76,7 +76,7 @@ func main() {
 	faqSvc := service.NewFaqSvc(faqRepo)
 
 	// Handlers
-	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo, userServiceAccessRepo, serviceInstanceRepo, tenantServiceRepo)
+	tenantHandler := handler.NewTenantHandler(tenantSvc, portalRepo, userServiceAccessRepo, businessRepo, tenantServiceRepo)
 	serviceHandler := handler.NewServiceHandler(serviceSvc, roleRepo)
 	deploymentHandler := handler.NewDeploymentHandler(deploymentSvc)
 	portalHandler := handler.NewPortalHandler(portalRepo, tenantRepo, serviceRepo, tenantServiceRepo)
@@ -120,7 +120,9 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(serviceAPIKeyMW.Verify)
 		r.Get("/api/v1/public/services/{service_identifier}/tenants", tenantHandler.PublicListByService)
-		r.Get("/api/v1/public/services/{service_identifier}/instances", tenantHandler.PublicListInstancesByService)
+		r.Get("/api/v1/public/services/{service_identifier}/businesses", tenantHandler.PublicListBusinessesByService)
+		// Deprecated: remove once all consumers use /business(es)
+		r.Get("/api/v1/public/services/{service_identifier}/instances", tenantHandler.PublicListBusinessesByService)
 	})
 
 	// Protected routes
@@ -136,7 +138,9 @@ func main() {
 		r.Get("/api/v1/tenants/{id}/services", tenantHandler.GetServices)
 		r.Post("/api/v1/tenants/{id}/services", tenantHandler.AssignService)
 		r.Delete("/api/v1/tenants/{id}/services/{service_id}", tenantHandler.UnassignService)
-		r.Patch("/api/v1/tenants/{id}/services/{service_id}/instance", tenantHandler.UpdateInstance)
+		r.Patch("/api/v1/tenants/{id}/services/{service_id}/business", tenantHandler.UpdateBusiness)
+		// Deprecated: remove once all consumers use /business(es)
+		r.Patch("/api/v1/tenants/{id}/services/{service_id}/instance", tenantHandler.UpdateBusiness)
 		r.Get("/api/v1/tenants/{id}/users", tenantHandler.GetUsers)
 		r.Post("/api/v1/tenants/{id}/users", tenantHandler.CreateUser)
 		r.Patch("/api/v1/tenants/{id}/users/{uid}", tenantHandler.UpdateUser)

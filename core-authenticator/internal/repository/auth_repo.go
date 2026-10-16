@@ -116,13 +116,13 @@ func (r *AuthRepo) GetTenantServiceIDs(ctx context.Context, tenantID uuid.UUID) 
 // enabled/active services — the restricted-user counterpart to
 // GetTenantServiceIDs, used when users.restrict_services is TRUE. Same join
 // shape as HasServiceGrant/ResolveServiceAccess: user_service_access ->
-// service_instances -> tenant_services -> services.
+// businesses -> tenant_services -> services.
 func (r *AuthRepo) GetGrantedServiceIDs(ctx context.Context, userID, tenantID uuid.UUID) ([]string, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT s.id::text
 		FROM user_service_access usa
-		JOIN service_instances si ON si.id = usa.service_instance_id
-		JOIN tenant_services ts   ON ts.id = si.tenant_service_id
+		JOIN businesses b         ON b.id = usa.business_id
+		JOIN tenant_services ts   ON ts.id = b.tenant_service_id
 		JOIN services s           ON s.id = ts.service_id
 		WHERE usa.user_id = $1
 		  AND ts.tenant_id  = $2
@@ -146,19 +146,19 @@ func (r *AuthRepo) GetGrantedServiceIDs(ctx context.Context, userID, tenantID uu
 }
 
 // ResolveServiceAccess looks up the caller's fresh user_service_access grant
-// for a given service, joining user_service_access -> service_instances ->
-// tenant_services -> roles. When instanceID is nil, it auto-resolves to the
-// caller's sole grant under that service_id (mirroring the N-instance
+// for a given service, joining user_service_access -> businesses ->
+// tenant_services -> roles. When businessID is nil, it auto-resolves to the
+// caller's sole grant under that service_id (mirroring the N-business
 // selection default); if the caller has zero or more than one grant under
-// that service_id with no instanceID given, resolution is ambiguous/absent
+// that service_id with no businessID given, resolution is ambiguous/absent
 // and (nil, nil) is returned — this is a "not resolved" signal, not an
 // error, so /auth/validate can silently omit the additive fields.
-func (r *AuthRepo) ResolveServiceAccess(ctx context.Context, userID, serviceID uuid.UUID, instanceID *uuid.UUID) (*domain.ResolvedAccess, error) {
+func (r *AuthRepo) ResolveServiceAccess(ctx context.Context, userID, serviceID uuid.UUID, businessID *uuid.UUID) (*domain.ResolvedAccess, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT usa.service_instance_id, ro.name
+		SELECT usa.business_id, ro.name
 		FROM user_service_access usa
-		JOIN service_instances si ON si.id = usa.service_instance_id
-		JOIN tenant_services ts ON ts.id = si.tenant_service_id
+		JOIN businesses b ON b.id = usa.business_id
+		JOIN tenant_services ts ON ts.id = b.tenant_service_id
 		JOIN roles ro ON ro.id = usa.role_id
 		WHERE usa.user_id = $1 AND ts.service_id = $2
 	`, userID, serviceID)
@@ -170,7 +170,7 @@ func (r *AuthRepo) ResolveServiceAccess(ctx context.Context, userID, serviceID u
 	var grants []domain.ResolvedAccess
 	for rows.Next() {
 		var g domain.ResolvedAccess
-		if err := rows.Scan(&g.ServiceInstanceID, &g.Role); err != nil {
+		if err := rows.Scan(&g.BusinessID, &g.Role); err != nil {
 			return nil, fmt.Errorf("resolve service access: %w", err)
 		}
 		grants = append(grants, g)
@@ -179,9 +179,9 @@ func (r *AuthRepo) ResolveServiceAccess(ctx context.Context, userID, serviceID u
 		return nil, fmt.Errorf("resolve service access: %w", err)
 	}
 
-	if instanceID != nil {
+	if businessID != nil {
 		for _, g := range grants {
-			if g.ServiceInstanceID == *instanceID {
+			if g.BusinessID == *businessID {
 				return &g, nil
 			}
 		}

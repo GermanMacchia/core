@@ -43,9 +43,9 @@ func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "name and deployment_id are required")
 		return
 	}
-	if input.RequiresInstance == nil {
+	if input.RequiresBusiness == nil {
 		t := true
-		input.RequiresInstance = &t
+		input.RequiresBusiness = &t
 	}
 
 	svc, err := h.svc.Create(r.Context(), input)
@@ -124,7 +124,7 @@ func (h *ServiceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // ListRoles returns the per-service role catalog for serviceID — used to
 // populate the role selector when granting a user a user_service_access
-// grant scoped to one of that service's instances.
+// grant scoped to one of that service's businesses.
 //
 //	GET /api/v1/services/{id}/roles
 func (h *ServiceHandler) ListRoles(w http.ResponseWriter, r *http.Request) {

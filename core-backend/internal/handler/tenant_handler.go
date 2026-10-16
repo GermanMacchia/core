@@ -23,12 +23,12 @@ type TenantHandler struct {
 	tenants        *service.TenantService
 	portals        *repository.PortalRepo
 	access         *repository.UserServiceAccessRepo
-	instances      *repository.ServiceInstanceRepo
+	businesses     *repository.BusinessRepo
 	tenantServices *repository.TenantServiceRepo
 }
 
-func NewTenantHandler(tenants *service.TenantService, portals *repository.PortalRepo, access *repository.UserServiceAccessRepo, instances *repository.ServiceInstanceRepo, tenantServices *repository.TenantServiceRepo) *TenantHandler {
-	return &TenantHandler{tenants: tenants, portals: portals, access: access, instances: instances, tenantServices: tenantServices}
+func NewTenantHandler(tenants *service.TenantService, portals *repository.PortalRepo, access *repository.UserServiceAccessRepo, businesses *repository.BusinessRepo, tenantServices *repository.TenantServiceRepo) *TenantHandler {
+	return &TenantHandler{tenants: tenants, portals: portals, access: access, businesses: businesses, tenantServices: tenantServices}
 }
 
 // callerUserID extracts the authenticated caller's user id from the request
@@ -230,11 +230,12 @@ func (h *TenantHandler) UnassignService(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// UpdateInstance partially updates the service_instances ("negocio") row
-// backing a tenant's adhesion to a service.
+// UpdateBusiness partially updates the businesses ("negocio") row backing a
+// tenant's adhesion to a service.
 //
-//	PATCH /api/v1/tenants/{id}/services/{service_id}/instance
-func (h *TenantHandler) UpdateInstance(w http.ResponseWriter, r *http.Request) {
+//	PATCH /api/v1/tenants/{id}/services/{service_id}/business
+//	PATCH /api/v1/tenants/{id}/services/{service_id}/instance (deprecated alias)
+func (h *TenantHandler) UpdateBusiness(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		response.BadRequest(w, "invalid tenant id")
@@ -267,10 +268,10 @@ func (h *TenantHandler) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inst, err := h.tenantServices.UpdateInstance(r.Context(), tenantID, serviceID, body.Name, body.Slug, body.Config)
+	biz, err := h.tenantServices.UpdateBusiness(r.Context(), tenantID, serviceID, body.Name, body.Slug, body.Config)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			response.Error(w, http.StatusNotFound, "no service instance found for this tenant/service")
+			response.Error(w, http.StatusNotFound, "no business found for this tenant/service")
 			return
 		}
 		var pgErr *pgconn.PgError
@@ -281,7 +282,7 @@ func (h *TenantHandler) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 		response.InternalError(w)
 		return
 	}
-	response.JSON(w, http.StatusOK, inst)
+	response.JSON(w, http.StatusOK, biz)
 }
 
 func (h *TenantHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -421,11 +422,10 @@ func (h *TenantHandler) ListUserServiceAccess(w http.ResponseWriter, r *http.Req
 }
 
 // CreateUserServiceAccess grants a tenant user a role on a specific
-// service_instance. The DB trigger enforce_role_service_match (migration
-// 031) validates that role_id belongs to the same service as
-// service_instance_id — that error, and the user_id/service_instance_id
-// UNIQUE constraint, are mapped to a 400/409 below instead of being
-// reimplemented here.
+// business. The DB trigger enforce_role_service_match (migrations 031/038)
+// validates that role_id belongs to the same service as business_id — that
+// error, and the user_id/business_id UNIQUE constraint, are mapped to a
+// 400/409 below instead of being reimplemented here.
 //
 //	POST /api/v1/tenants/{id}/users/{uid}/service-access
 func (h *TenantHandler) CreateUserServiceAccess(w http.ResponseWriter, r *http.Request) {
@@ -446,19 +446,26 @@ func (h *TenantHandler) CreateUserServiceAccess(w http.ResponseWriter, r *http.R
 	}
 
 	var body struct {
-		ServiceInstanceID uuid.UUID `json:"service_instance_id"`
-		RoleID            uuid.UUID `json:"role_id"`
+		BusinessID uuid.UUID `json:"business_id"`
+		// Deprecated: legacy field name, accepted only as a fallback when
+		// business_id is absent. Remove once all consumers send business_id.
+		LegacyServiceInstanceID uuid.UUID `json:"service_instance_id"`
+		RoleID                  uuid.UUID `json:"role_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		response.BadRequest(w, "invalid request body")
 		return
 	}
-	if body.ServiceInstanceID == uuid.Nil || body.RoleID == uuid.Nil {
-		response.BadRequest(w, "service_instance_id and role_id are required")
+	businessID := body.BusinessID
+	if businessID == uuid.Nil {
+		businessID = body.LegacyServiceInstanceID
+	}
+	if businessID == uuid.Nil || body.RoleID == uuid.Nil {
+		response.BadRequest(w, "business_id and role_id are required")
 		return
 	}
 
-	grant, err := h.access.CreateGrant(r.Context(), userID, body.ServiceInstanceID, body.RoleID)
+	grant, err := h.access.CreateGrant(r.Context(), userID, businessID, body.RoleID)
 	if err != nil {
 		if msg, status, ok := pgGrantError(err); ok {
 			response.Error(w, status, msg)
@@ -504,7 +511,7 @@ func (h *TenantHandler) DeleteUserServiceAccess(w http.ResponseWriter, r *http.R
 
 // pgGrantError maps a Postgres error surfaced from CreateGrant to a
 // user-facing status/message: SQLSTATE 23505 (the
-// user_id/service_instance_id UNIQUE constraint) is a 409 conflict; P0001
+// user_id/business_id UNIQUE constraint) is a 409 conflict; P0001
 // (the RAISE EXCEPTION inside the enforce_role_service_match trigger —
 // migration 031) is a 400 carrying the trigger's own message. Any other
 // error is left for the caller to treat as a 500.
@@ -515,7 +522,7 @@ func pgGrantError(err error) (msg string, status int, ok bool) {
 	}
 	switch pgErr.Code {
 	case "23505":
-		return "this user already has a grant on that service instance", http.StatusConflict, true
+		return "this user already has a grant on that business", http.StatusConflict, true
 	case "P0001":
 		return pgErr.Message, http.StatusBadRequest, true
 	default:
@@ -664,28 +671,31 @@ func (h *TenantHandler) PublicListByService(w http.ResponseWriter, r *http.Reque
 	response.JSON(w, http.StatusOK, tenants)
 }
 
-// PublicListInstancesByService returns the service_instances ("negocios")
-// adhered to the service identified by {service_identifier} (a services.id
-// UUID or a services.name — services.slug was dropped in migrations/014).
+// PublicListBusinessesByService returns the businesses ("negocios") adhered
+// to the service identified by {service_identifier} (a services.id UUID or a
+// services.name — services.slug was dropped in migrations/014).
 // This is the portal-independent replacement for
 // PublicListByService that booking-backend's SyncTenants repoints at (see
-// plan §2/§5): each item's ID now opaquely holds a service_instances.id
-// instead of a tenants.id. The old .../tenants endpoint stays live alongside
-// this one until booking-backend fully migrates.
-func (h *TenantHandler) PublicListInstancesByService(w http.ResponseWriter, r *http.Request) {
+// plan §2/§5): each item's ID opaquely holds a businesses.id instead of a
+// tenants.id. The old .../tenants endpoint stays live alongside this one
+// until booking-backend fully migrates.
+//
+//	GET /api/v1/public/services/{service_identifier}/businesses
+//	GET /api/v1/public/services/{service_identifier}/instances (deprecated alias)
+func (h *TenantHandler) PublicListBusinessesByService(w http.ResponseWriter, r *http.Request) {
 	serviceIdentifier := chi.URLParam(r, "service_identifier")
 	if serviceIdentifier == "" {
 		response.BadRequest(w, "service_identifier is required")
 		return
 	}
 
-	instances, err := h.instances.ListByService(r.Context(), serviceIdentifier)
+	businesses, err := h.businesses.ListByService(r.Context(), serviceIdentifier)
 	if err != nil {
 		response.InternalError(w)
 		return
 	}
 
-	type instanceItem struct {
+	type businessItem struct {
 		ID     string `json:"id"`
 		Name   string `json:"name"`
 		Slug   string `json:"slug"`
@@ -694,17 +704,16 @@ func (h *TenantHandler) PublicListInstancesByService(w http.ResponseWriter, r *h
 		LogoURL string `json:"logo_url,omitempty"`
 	}
 
-	items := make([]instanceItem, 0, len(instances))
-	for _, inst := range instances {
-		logoURL, _ := inst.Config["logo_url"].(string)
-		items = append(items, instanceItem{
-			ID:      inst.ID.String(),
-			Name:    inst.Name,
-			Slug:    inst.Slug,
-			Status:  string(inst.Status),
+	items := make([]businessItem, 0, len(businesses))
+	for _, biz := range businesses {
+		logoURL, _ := biz.Config["logo_url"].(string)
+		items = append(items, businessItem{
+			ID:      biz.ID.String(),
+			Name:    biz.Name,
+			Slug:    biz.Slug,
+			Status:  string(biz.Status),
 			LogoURL: logoURL,
 		})
 	}
 	response.JSON(w, http.StatusOK, items)
 }
-

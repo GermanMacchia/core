@@ -145,19 +145,28 @@ func (h *AuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 	// Additive fresh-grant resolution: opt-in via X-Service-ID so existing
 	// callers that don't know about it yet are completely unaffected. Any
 	// failure to resolve (missing/invalid header, no grant, ambiguous
-	// instance) silently leaves these fields out of the response — it never
+	// business) silently leaves these fields out of the response — it never
 	// turns into a request failure, and never distinguishes "no header" from
 	// "no grant" to the caller.
 	if serviceID, err := uuid.Parse(r.Header.Get("X-Service-ID")); err == nil {
 		if userID, err := uuid.Parse(claims.Subject); err == nil {
-			var instanceID *uuid.UUID
-			if raw := r.Header.Get("X-Service-Instance-ID"); raw != "" {
+			var businessID *uuid.UUID
+			raw := r.Header.Get("X-Business-ID")
+			if raw == "" {
+				// Deprecated: legacy header name, read only as a fallback. Remove once
+				// all consumers send X-Business-ID.
+				raw = r.Header.Get("X-Service-Instance-ID")
+			}
+			if raw != "" {
 				if parsed, err := uuid.Parse(raw); err == nil {
-					instanceID = &parsed
+					businessID = &parsed
 				}
 			}
-			if access, err := h.auth.ResolveServiceAccess(r.Context(), userID, serviceID, instanceID); err == nil && access != nil {
-				body["service_instance_id"] = access.ServiceInstanceID.String()
+			if access, err := h.auth.ResolveServiceAccess(r.Context(), userID, serviceID, businessID); err == nil && access != nil {
+				body["business_id"] = access.BusinessID.String()
+				// Deprecated: legacy key carrying the same value as business_id. Remove
+				// once all consumers read business_id.
+				body["service_instance_id"] = access.BusinessID.String()
 				body["resolved_role"] = access.Role
 			}
 		}

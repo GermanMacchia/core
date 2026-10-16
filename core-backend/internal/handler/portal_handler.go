@@ -258,8 +258,8 @@ func (h *PortalHandler) GetServicesAuth(w http.ResponseWriter, r *http.Request) 
 }
 
 // AssignService adds or re-enables a service on a portal. When the service
-// requires a service_instance ("negocio"), it ensures the tenant's adhesion
-// (tenant_services + service_instances) exists first, via
+// requires a business ("negocio"), it ensures the tenant's adhesion
+// (tenant_services + businesses) exists first, via
 // TenantServiceRepo.AssignService — the same path used for the direct
 // Tenant->Service adhesion — so portal-only assignments don't skip creating
 // the "negocio".
@@ -297,7 +297,7 @@ func (h *PortalHandler) AssignService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if svc.RequiresInstance {
+	if svc.RequiresBusiness {
 		tenantID, err := h.portals.GetTenantIDByPortalID(r.Context(), portalID)
 		if err != nil {
 			response.InternalError(w)

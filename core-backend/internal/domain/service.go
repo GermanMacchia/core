@@ -19,7 +19,7 @@ type Service struct {
 	Description      *string   `json:"description,omitempty"`
 	Config           JSONMap   `json:"config"`
 	IsActive         bool      `json:"is_active"`
-	RequiresInstance bool      `json:"requires_instance"`
+	RequiresBusiness bool      `json:"requires_business"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -29,7 +29,7 @@ type CreateServiceInput struct {
 	DeploymentID     uuid.UUID `json:"deployment_id"`
 	Description      *string   `json:"description,omitempty"`
 	Config           JSONMap   `json:"config"`
-	RequiresInstance *bool     `json:"requires_instance,omitempty"`
+	RequiresBusiness *bool     `json:"requires_business,omitempty"`
 }
 
 type UpdateServiceInput struct {
@@ -38,7 +38,7 @@ type UpdateServiceInput struct {
 	Description      *string    `json:"description,omitempty"`
 	IsActive         *bool      `json:"is_active,omitempty"`
 	Config           JSONMap    `json:"config,omitempty"`
-	RequiresInstance *bool      `json:"requires_instance,omitempty"`
+	RequiresBusiness *bool      `json:"requires_business,omitempty"`
 }
 
 // TenantService is a Service adhered to directly by a tenant (tenant_services),
@@ -48,9 +48,9 @@ type TenantService struct {
 	Name             string                 `json:"name"`
 	MFEURL           string                 `json:"mfe_url"`
 	DeploymentName   string                 `json:"deployment_name"`
-	IsEnabled       bool                   `json:"is_enabled"`
-	RequiresInstance bool                   `json:"requires_instance"`
-	Instance         *TenantServiceInstance `json:"instance,omitempty"`
+	IsEnabled        bool                   `json:"is_enabled"`
+	RequiresBusiness bool                   `json:"requires_business"`
+	Business         *TenantServiceBusiness `json:"business,omitempty"`
 }
 
 type ServiceRepository interface {

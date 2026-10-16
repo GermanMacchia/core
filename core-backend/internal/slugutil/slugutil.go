@@ -35,7 +35,7 @@ func Slugify(s string) string {
 
 // Unique returns base, or base suffixed with -2, -3, ... when taken reports it
 // as already used. Callers check within their uniqueness scope (per service for
-// service_instances); a concurrent insert can still race past this check, in
+// businesses); a concurrent insert can still race past this check, in
 // which case the database UNIQUE constraint rejects it.
 func Unique(base string, taken func(slug string) (bool, error)) (string, error) {
 	candidate := base
@@ -51,7 +51,7 @@ func Unique(base string, taken func(slug string) (bool, error)) (string, error) 
 	}
 }
 
-// MaxLen mirrors service_instances.slug VARCHAR(100).
+// MaxLen mirrors businesses.slug VARCHAR(100).
 const MaxLen = 100
 
 var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)

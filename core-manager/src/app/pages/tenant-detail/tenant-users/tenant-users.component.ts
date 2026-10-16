@@ -123,9 +123,9 @@ import { apiErrorMessage } from '../../../core/utils/api-error'
           <form [formGroup]="grantForm" class="flex items-end gap-2 flex-wrap">
             <label class="form-control flex-1 min-w-[180px]">
               <div class="label pt-0 pb-1"><span class="label-text text-xs font-medium">Negocio</span></div>
-              <select formControlName="service_instance_id" class="select select-bordered select-sm">
+              <select formControlName="business_id" class="select select-bordered select-sm">
                 <option value="">Seleccionar...</option>
-                @for (opt of instanceOptions(); track opt.value) {
+                @for (opt of businessOptions(); track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
                 }
               </select>
@@ -197,20 +197,20 @@ export class TenantUsersComponent implements OnInit {
   grantRoleOptions = signal<RoleOption[]>([])
 
   grantForm = this.fb.nonNullable.group({
-    service_instance_id: ['', Validators.required],
+    business_id: ['', Validators.required],
     role_id: ['', Validators.required],
   })
 
-  instanceOptions = computed(() =>
+  businessOptions = computed(() =>
     this.tenantServices().flatMap(s =>
-      s.instance
-        ? [{ label: `${s.name} — ${s.instance.name}`, value: s.instance.id, serviceId: s.id }]
+      s.business
+        ? [{ label: `${s.name} — ${s.business.name}`, value: s.business.id, serviceId: s.id }]
         : [],
     ),
   )
 
   grantColumns: CompactListColumn<ServiceAccessGrant>[] = [
-    { key: 'service_instance_name', prop: 'service_instance_name', header: 'Negocio', type: 'text' },
+    { key: 'business_name', prop: 'business_name', header: 'Negocio', type: 'text' },
     { key: 'service_name', prop: 'service_name', header: 'Servicio', type: 'text' },
     { key: 'role_name', prop: 'role_name', header: 'Rol', type: 'badge' },
   ]
@@ -306,11 +306,11 @@ export class TenantUsersComponent implements OnInit {
   constructor() {
     // Reload the role options whenever the selected business changes;
     // switchMap drops in-flight requests for a previous selection.
-    this.grantForm.controls.service_instance_id.valueChanges
+    this.grantForm.controls.business_id.valueChanges
       .pipe(
         tap(() => this.grantForm.patchValue({ role_id: '' }, { emitEvent: false })),
-        switchMap(instanceId => {
-          const opt = this.instanceOptions().find(o => o.value === instanceId)
+        switchMap(businessId => {
+          const opt = this.businessOptions().find(o => o.value === businessId)
           if (!opt) return of<RoleOption[]>([])
           return this.admin.listRolesByService(opt.serviceId).pipe(
             map(res => res.data ?? []),
@@ -544,7 +544,7 @@ export class TenantUsersComponent implements OnInit {
     this.saving.set(true)
     this.admin
       .createUserServiceAccess(this.tenantId(), target.id, {
-        service_instance_id: v.service_instance_id,
+        business_id: v.business_id,
         role_id: v.role_id,
       })
       .subscribe({
@@ -568,7 +568,7 @@ export class TenantUsersComponent implements OnInit {
     if (event.action === 'delete') {
       this.infoModal.openAsConfirm(
         () => this.doDeleteGrant(event.item),
-        `¿Quitar el acceso a "${event.item.service_instance_name}"?`,
+        `¿Quitar el acceso a "${event.item.business_name}"?`,
       )
     }
   }

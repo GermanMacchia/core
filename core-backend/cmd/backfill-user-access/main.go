@@ -1,18 +1,20 @@
 // Command backfill-user-access is a one-off migration helper for
 // migrations/032 (see migrations/031_create_user_service_access.sql). It must
-// be run once, after 031 is applied.
+// be run once, after 031 is applied. Its SQL now targets the post-038 schema
+// (businesses / user_service_access.business_id), so re-running it requires
+// migration 038.
 //
 // It grants every existing admin/member/viewer user access on EVERY
-// service_instances row under their own tenant (preserving today's effective
+// businesses row under their own tenant (preserving today's effective
 // blanket per-tenant access — the safest default now that access is
-// per-instance instead of implicit), and grants every existing superadmin
-// user access on the Platform tenant's Manager instance (core-admin staff
+// per-business instead of implicit), and grants every existing superadmin
+// user access on the Platform tenant's Manager business (core-admin staff
 // access). It resolves each grant's role_id to the per-service role cloned by
 // migrations/030 (matched by name + service_id), never to the original global
 // role row.
 //
 // It is safe to re-run: every insert is idempotent
-// (ON CONFLICT (user_id, service_instance_id) DO NOTHING).
+// (ON CONFLICT (user_id, business_id) DO NOTHING).
 //
 // Usage: go run ./cmd/backfill-user-access
 package main
@@ -80,7 +82,7 @@ func main() {
 			}
 			grantCount += n
 			if n == 0 {
-				logger.Warn("superadmin user granted zero instances (no Manager instance found under Platform tenant)",
+				logger.Warn("superadmin user granted zero businesses (no Manager business found under Platform tenant)",
 					zap.Stringer("user_id", u.id))
 			}
 
@@ -131,29 +133,29 @@ func loadUsers(ctx context.Context, tx pgx.Tx) ([]userRow, error) {
 	return users, rows.Err()
 }
 
-// grantSuperadmin grants userID access to every service_instances row found
+// grantSuperadmin grants userID access to every businesses row found
 // under the Platform tenant's Manager adhesion (there should be exactly one,
 // per today's 1:1 backfill), using superadmin's own role row as role_id — its
 // service_id was repointed to Manager by migrations/030. Returns the number
 // of grants inserted (0 or 1 under today's data shape).
 func grantSuperadmin(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (int, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT si.id
-		FROM service_instances si
-		JOIN tenant_services ts ON ts.id = si.tenant_service_id
+		SELECT b.id
+		FROM businesses b
+		JOIN tenant_services ts ON ts.id = b.tenant_service_id
 		WHERE ts.tenant_id = $1 AND ts.service_id = $2
 	`, platformTenantID, managerServiceID)
 	if err != nil {
 		return 0, err
 	}
-	var instanceIDs []uuid.UUID
+	var businessIDs []uuid.UUID
 	for rows.Next() {
 		var id uuid.UUID
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
 			return 0, err
 		}
-		instanceIDs = append(instanceIDs, id)
+		businessIDs = append(businessIDs, id)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -161,12 +163,12 @@ func grantSuperadmin(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (int, err
 	}
 
 	inserted := 0
-	for _, instanceID := range instanceIDs {
+	for _, businessID := range businessIDs {
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO user_service_access (user_id, service_instance_id, role_id)
+			INSERT INTO user_service_access (user_id, business_id, role_id)
 			VALUES ($1, $2, $3)
-			ON CONFLICT (user_id, service_instance_id) DO NOTHING
-		`, userID, instanceID, superadminRoleID)
+			ON CONFLICT (user_id, business_id) DO NOTHING
+		`, userID, businessID, superadminRoleID)
 		if err != nil {
 			return inserted, err
 		}
@@ -175,32 +177,32 @@ func grantSuperadmin(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (int, err
 	return inserted, nil
 }
 
-// grantTenantBlanketAccess grants u access to every service_instances row
+// grantTenantBlanketAccess grants u access to every businesses row
 // under its own tenant, resolving role_id to the per-service clone of u's
 // current role name (created by migrations/030). Returns
-// (grants inserted, instances skipped for lacking a matching cloned role).
+// (grants inserted, businesses skipped for lacking a matching cloned role).
 func grantTenantBlanketAccess(ctx context.Context, tx pgx.Tx, u userRow) (int, int, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT si.id, ts.service_id
-		FROM service_instances si
-		JOIN tenant_services ts ON ts.id = si.tenant_service_id
+		SELECT b.id, ts.service_id
+		FROM businesses b
+		JOIN tenant_services ts ON ts.id = b.tenant_service_id
 		WHERE ts.tenant_id = $1
 	`, u.tenantID)
 	if err != nil {
 		return 0, 0, err
 	}
-	type instanceService struct {
-		instanceID uuid.UUID
+	type businessService struct {
+		businessID uuid.UUID
 		serviceID  uuid.UUID
 	}
-	var instances []instanceService
+	var businesses []businessService
 	for rows.Next() {
-		var is instanceService
-		if err := rows.Scan(&is.instanceID, &is.serviceID); err != nil {
+		var bs businessService
+		if err := rows.Scan(&bs.businessID, &bs.serviceID); err != nil {
 			rows.Close()
 			return 0, 0, err
 		}
-		instances = append(instances, is)
+		businesses = append(businesses, bs)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -208,11 +210,11 @@ func grantTenantBlanketAccess(ctx context.Context, tx pgx.Tx, u userRow) (int, i
 	}
 
 	inserted, skipped := 0, 0
-	for _, is := range instances {
+	for _, bs := range businesses {
 		var roleID uuid.UUID
 		err := tx.QueryRow(ctx, `
 			SELECT id FROM roles WHERE name = $1 AND service_id = $2
-		`, u.roleName, is.serviceID).Scan(&roleID)
+		`, u.roleName, bs.serviceID).Scan(&roleID)
 		if err != nil {
 			if err == pgx.ErrNoRows {
 				skipped++
@@ -222,10 +224,10 @@ func grantTenantBlanketAccess(ctx context.Context, tx pgx.Tx, u userRow) (int, i
 		}
 
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO user_service_access (user_id, service_instance_id, role_id)
+			INSERT INTO user_service_access (user_id, business_id, role_id)
 			VALUES ($1, $2, $3)
-			ON CONFLICT (user_id, service_instance_id) DO NOTHING
-		`, u.id, is.instanceID, roleID)
+			ON CONFLICT (user_id, business_id) DO NOTHING
+		`, u.id, bs.businessID, roleID)
 		if err != nil {
 			return inserted, skipped, err
 		}

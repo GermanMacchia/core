@@ -40,8 +40,8 @@ type User struct {
 // /auth/validate time — additive to the JWT-derived claims, never replacing
 // them.
 type ResolvedAccess struct {
-	ServiceInstanceID uuid.UUID
-	Role              string
+	BusinessID uuid.UUID
+	Role       string
 }
 
 type RefreshToken struct {

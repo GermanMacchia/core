@@ -15,7 +15,7 @@ import type {
 	Faq,
 	ServiceAccessGrant,
 	RoleOption,
-	ServiceInstance,
+	Business,
 	Deployment,
 	CreateDeploymentInput,
 	UpdateDeploymentInput,
@@ -213,9 +213,9 @@ export class AdminService {
 		)
 	}
 
-	updateTenantServiceInstance(tenantId: string, serviceId: string, body: { name?: string; slug?: string; config?: Record<string, unknown> }) {
-		return this.http.patch<ApiResponse<ServiceInstance>>(
-			`${CORE_API}/api/v1/tenants/${tenantId}/services/${serviceId}/instance`,
+	updateTenantServiceBusiness(tenantId: string, serviceId: string, body: { name?: string; slug?: string; config?: Record<string, unknown> }) {
+		return this.http.patch<ApiResponse<Business>>(
+			`${CORE_API}/api/v1/tenants/${tenantId}/services/${serviceId}/business`,
 			body,
 			{ headers: this.headers },
 		)
@@ -260,7 +260,7 @@ export class AdminService {
 		deployment_id: string
 		description?: string
 		config?: Record<string, unknown>
-		requires_instance: boolean
+		requires_business: boolean
 	}) {
 		return this.http.post<ApiResponse<Service>>(`${CORE_API}/api/v1/services`, body, {
 			headers: this.headers,
@@ -281,7 +281,7 @@ export class AdminService {
 			description?: string
 			is_active?: boolean
 			config?: Record<string, unknown>
-			requires_instance?: boolean
+			requires_business?: boolean
 		},
 	) {
 		return this.http.patch<ApiResponse<Service>>(`${CORE_API}/api/v1/services/${id}`, body, {
@@ -333,7 +333,7 @@ export class AdminService {
 		)
 	}
 
-	createUserServiceAccess(tenantId: string, userId: string, body: { service_instance_id: string; role_id: string }) {
+	createUserServiceAccess(tenantId: string, userId: string, body: { business_id: string; role_id: string }) {
 		return this.http.post<ApiResponse<ServiceAccessGrant>>(
 			`${CORE_API}/api/v1/tenants/${tenantId}/users/${userId}/service-access`,
 			body,

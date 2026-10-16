@@ -26,14 +26,14 @@ func NewServiceRepo(db *pgxpool.Pool) *ServiceRepo {
 // and the deployment as "d".
 const serviceColumns = `
 	s.id, s.name, s.deployment_id, d.name, d.url, d.version, s.description,
-	s.config, s.is_active, s.requires_instance, s.created_at, s.updated_at
+	s.config, s.is_active, s.requires_business, s.created_at, s.updated_at
 `
 
 func scanService(row rowScanner) (*domain.Service, error) {
 	var s domain.Service
 	if err := row.Scan(
 		&s.ID, &s.Name, &s.DeploymentID, &s.DeploymentName, &s.MFEURL, &s.Version, &s.Description,
-		&s.Config, &s.IsActive, &s.RequiresInstance, &s.CreatedAt, &s.UpdatedAt,
+		&s.Config, &s.IsActive, &s.RequiresBusiness, &s.CreatedAt, &s.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -43,13 +43,13 @@ func scanService(row rowScanner) (*domain.Service, error) {
 func (r *ServiceRepo) Create(ctx context.Context, input domain.CreateServiceInput) (*domain.Service, error) {
 	s, err := scanService(r.db.QueryRow(ctx, `
 		WITH s AS (
-			INSERT INTO services (name, deployment_id, description, config, requires_instance)
+			INSERT INTO services (name, deployment_id, description, config, requires_business)
 			VALUES ($1, $2, $3, $4, $5)
 			RETURNING *
 		)
 		SELECT `+serviceColumns+`
 		FROM s JOIN deployments d ON d.id = s.deployment_id
-	`, input.Name, input.DeploymentID, input.Description, input.Config, input.RequiresInstance))
+	`, input.Name, input.DeploymentID, input.Description, input.Config, input.RequiresBusiness))
 	if err != nil {
 		return nil, fmt.Errorf("create service: %w", err)
 	}
@@ -100,7 +100,7 @@ func (r *ServiceRepo) Update(ctx context.Context, id uuid.UUID, input domain.Upd
 				deployment_id     = COALESCE($3, deployment_id),
 				description       = COALESCE($4, description),
 				is_active         = COALESCE($5, is_active),
-				requires_instance = COALESCE($6, requires_instance),
+				requires_business = COALESCE($6, requires_business),
 				config            = CASE WHEN $7::jsonb IS NOT NULL THEN $7::jsonb ELSE config END,
 				updated_at        = NOW()
 			WHERE id = $1
@@ -108,7 +108,7 @@ func (r *ServiceRepo) Update(ctx context.Context, id uuid.UUID, input domain.Upd
 		)
 		SELECT `+serviceColumns+`
 		FROM s JOIN deployments d ON d.id = s.deployment_id
-	`, id, input.Name, input.DeploymentID, input.Description, input.IsActive, input.RequiresInstance, input.Config))
+	`, id, input.Name, input.DeploymentID, input.Description, input.IsActive, input.RequiresBusiness, input.Config))
 	if err != nil {
 		return nil, fmt.Errorf("update service: %w", err)
 	}

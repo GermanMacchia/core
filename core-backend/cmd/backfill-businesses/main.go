@@ -1,16 +1,17 @@
-// Command backfill-instances is a one-off migration helper for
-// migrations/026 (see migrations/023_add_is_internal_to_services.sql through
-// 025_create_service_instances.sql). It must be run once, after 023-025 are
-// applied and before 027_add_tenant_service_id_to_portal_services.sql runs
-// (027's backfill UPDATE reads the tenant_services rows this command writes).
+// Command backfill-businesses (formerly backfill-instances) is a one-off
+// migration helper for migrations/026 (see migrations/023 through 025). It
+// was meant to run once, after 023-025 were applied and before
+// 027_add_tenant_service_id_to_portal_services.sql ran (027's backfill UPDATE
+// reads the tenant_services rows this command writes). Its SQL now targets the
+// post-038 schema (businesses), so re-running it requires migration 038.
 //
 // It derives tenant_services rows from today's only adhesion signal
 // (portal_services JOIN tenant_portals), then creates exactly one
-// service_instances row per resulting tenant_services row (today's reality is
+// businesses row per resulting tenant_services row (today's reality is
 // strictly 1:1 tenant<->business). It is safe to re-run: every write is
 // idempotent (ON CONFLICT DO NOTHING / existence checks).
 //
-// Usage: go run ./cmd/backfill-instances
+// Usage: go run ./cmd/backfill-businesses
 package main
 
 import (
@@ -30,7 +31,7 @@ type tenantServicePair struct {
 	isEnabled bool
 }
 
-type pendingInstance struct {
+type pendingBusiness struct {
 	tenantServiceID uuid.UUID
 	serviceID       uuid.UUID
 	tenantName      string
@@ -102,35 +103,35 @@ func main() {
 		tenantServiceCount += int(tag.RowsAffected())
 	}
 
-	// Step 2: one service_instances row per tenant_services row that doesn't
+	// Step 2: one businesses row per tenant_services row that doesn't
 	// have one yet, named/slugged after the tenant (today's reality: tenant
 	// IS the business, 1:1).
-	instRows, err := tx.Query(ctx, `
+	bizRows, err := tx.Query(ctx, `
 		SELECT ts.id, ts.service_id, t.name
 		FROM tenant_services ts
 		JOIN tenants t ON t.id = ts.tenant_id
-		LEFT JOIN service_instances si ON si.tenant_service_id = ts.id
-		WHERE si.id IS NULL
+		LEFT JOIN businesses b ON b.tenant_service_id = ts.id
+		WHERE b.id IS NULL
 	`)
 	if err != nil {
-		logger.Fatal("query tenant_services missing instances", zap.Error(err))
+		logger.Fatal("query tenant_services missing businesses", zap.Error(err))
 	}
 
-	var pending []pendingInstance
-	for instRows.Next() {
-		var p pendingInstance
-		if err := instRows.Scan(&p.tenantServiceID, &p.serviceID, &p.tenantName); err != nil {
-			instRows.Close()
-			logger.Fatal("scan pending instance", zap.Error(err))
+	var pending []pendingBusiness
+	for bizRows.Next() {
+		var p pendingBusiness
+		if err := bizRows.Scan(&p.tenantServiceID, &p.serviceID, &p.tenantName); err != nil {
+			bizRows.Close()
+			logger.Fatal("scan pending business", zap.Error(err))
 		}
 		pending = append(pending, p)
 	}
-	instRows.Close()
-	if err := instRows.Err(); err != nil {
-		logger.Fatal("iterate pending instances", zap.Error(err))
+	bizRows.Close()
+	if err := bizRows.Err(); err != nil {
+		logger.Fatal("iterate pending businesses", zap.Error(err))
 	}
 
-	instanceCount := 0
+	businessCount := 0
 	for _, p := range pending {
 		base := slugutil.Slugify(p.tenantName)
 		if base == "" {
@@ -145,33 +146,33 @@ func main() {
 		slug, err := slugutil.Unique(base, func(candidate string) (bool, error) {
 			var exists bool
 			err := tx.QueryRow(ctx, `
-				SELECT EXISTS (SELECT 1 FROM service_instances WHERE service_id = $1 AND slug = $2)
+				SELECT EXISTS (SELECT 1 FROM businesses WHERE service_id = $1 AND slug = $2)
 			`, p.serviceID, candidate).Scan(&exists)
 			return exists, err
 		})
 		if err != nil {
-			logger.Fatal("resolve unique instance slug",
+			logger.Fatal("resolve unique business slug",
 				zap.Stringer("tenant_service_id", p.tenantServiceID),
 				zap.Error(err))
 		}
 
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO service_instances (tenant_service_id, service_id, name, slug)
+			INSERT INTO businesses (tenant_service_id, service_id, name, slug)
 			VALUES ($1, $2, $3, $4)
 		`, p.tenantServiceID, p.serviceID, p.tenantName, slug); err != nil {
-			logger.Fatal("insert service_instances",
+			logger.Fatal("insert businesses",
 				zap.Stringer("tenant_service_id", p.tenantServiceID),
 				zap.Error(err))
 		}
-		instanceCount++
+		businessCount++
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		logger.Fatal("commit tx", zap.Error(err))
 	}
 
-	logger.Info("backfill-instances complete",
+	logger.Info("backfill-businesses complete",
 		zap.Int("tenant_services_inserted", tenantServiceCount),
-		zap.Int("service_instances_inserted", instanceCount),
+		zap.Int("businesses_inserted", businessCount),
 	)
 }

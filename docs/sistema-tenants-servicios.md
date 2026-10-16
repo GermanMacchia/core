@@ -21,12 +21,12 @@
 
 | Servicio | Repo | Responsabilidad | NO hace |
 |---|---|---|---|
-| **core-backend** (:8080, Go) | core | Catálogo de tenants, servicios, portales, planes, config-definitions, FAQs. Resuelve contexto (`/me/context`). Expone endpoints públicos con API key para que otros servicios (ej. booking-backend) consulten tenants/instancias. **Verifica** JWT (nunca firma). | No emite ni firma JWT. No maneja login/logout/refresh. No conoce lógica de negocio de booking (turnos, reservas, etc.). |
+| **core-backend** (:8080, Go) | core | Catálogo de tenants, servicios, portales, planes, config-definitions, FAQs. Resuelve contexto (`/me/context`). Expone endpoints públicos con API key para que otros servicios (ej. booking-backend) consulten tenants/negocios (`businesses`). **Verifica** JWT (nunca firma). | No emite ni firma JWT. No maneja login/logout/refresh. No conoce lógica de negocio de booking (turnos, reservas, etc.). |
 | **core-authenticator** (:8081, Go) | core | Único firmante de JWT. Login, refresh (rotación), logout, introspección (`/auth/validate`) para *cualquier* microservicio de la plataforma (core y booking incluidos). Resuelve grants frescos contra `user_service_access` de forma aditiva. | No conoce el catálogo de tenants/servicios/portales (solo tiene `users`/`refresh_tokens`, misma DB física `core_db` pero sin relación directa con las tablas de catálogo salvo `users.tenant_id`/`role_id`). |
 | **core-manager** (Angular, :4200 o MFE montado) | core | Panel admin/superadmin: Tenants, Servicios, Portales, Planes, Config-definitions, FAQs. Gestiona su propia sesión (tokens, refresh) de forma autónoma. Puede correr standalone (dev, con su propio `/login`) o montado como MFE single-spa dentro de un Shell externo. | No es el único punto de entrada a la plataforma — no orquesta otros MFEs de negocio (eso es responsabilidad del Shell, ver §3.1). No contiene lógica de negocio de booking. |
 | **core-login** (Svelte → Web Component `<login-mfe>`) | core | Formulario de login reutilizable, embebible como Custom Element. Se comunica directo con `core-authenticator`. Emite `loginsuccess`/`loginerror` como `CustomEvent` cruzando shadow DOM. | No valida ni persiste tokens — delega eso al MFE que lo embebe (ej. core-manager). |
 | **Shell (single-spa root-config)** | `../shell` — repo hermano, fuera de `core` y `booking` | Orquestador genérico (single-spa 6 + Vite 5, sin framework UI, agnóstico de proyecto — no conoce nada de tenants/booking). Resuelve tenant/portal vía `VITE_TENANT_ID`/`VITE_PORTAL_ID` (build-time) o `window.__SHELL_CONFIG__` (inyección en runtime); bootstrap **confirmado** vía `GET /api/v1/public/portals/{portal_id}` con header `X-Tenant-ID`. Registra cada servicio de `services[]` con `registerApplication`/`activeWhen`, corre `start()`, y **gestiona sesión centralizada**: tiene su propio `AuthStore` (`sessionStorage`: `shell_access_token`/`shell_refresh_token`), monta el servicio con `slug === loginSlug` como Login MFE, y aplica guardas de ruta antes de montar cualquier servicio protegido. Corre en `:9000` por defecto. | Contradice a `auth-sequence.md`, que afirma "el shell no tiene `AuthStore`, cada MFE gestiona su propia sesión" — ver §3.1. Su propio `README.md` tampoco coincide del todo con el código: describe un contrato de Login MFE (`context`/`onLogin` en customProps) que `root-config.js` no implementa (usa un `CustomEvent 'loginsuccess'` global en su lugar). |
-| **booking-backend** (Go) | booking | Producto tenant-facing (reservas/turnos). Valida JWT contra `core-authenticator` (`/auth/validate`), sincroniza tenants/instancias locales desde `core-backend`, aplica autorización por servicio/instancia. | No firma ni emite JWT. No es dueño del catálogo de tenants — sincroniza una copia local desde `core`. |
+| **booking-backend** (Go) | booking | Producto tenant-facing (reservas/turnos). Valida JWT contra `core-authenticator` (`/auth/validate`), sincroniza tenants/negocios locales desde `core-backend`, aplica autorización por servicio/negocio. | No firma ni emite JWT. No es dueño del catálogo de tenants — sincroniza una copia local desde `core`. |
 | **booking-admin** (Angular) | booking | Panel de administración del tenant sobre el producto booking. | No gestiona catálogo de tenants/servicios de la plataforma (eso es core-manager). |
 | **booking-platform** (Angular) | booking | Interfaz de operación del producto booking (según nombre — no se profundizó en detalle en esta sesión). | Pendiente de mayor exploración. |
 | **booking-widget** (Svelte) | booking | Widget embebible público para que el cliente final reserve. | No requiere autenticación de staff — es de cara al público. |
@@ -73,7 +73,7 @@ flowchart TB
     BookingWidget -->|"HTTP público sync<br/>(reserva end-user, sin auth)"| BookingBackend
 
     BookingBackend -->|"GET /auth/validate<br/>HTTP sync + X-Service-ID<br/>(sin compartir JWT_SECRET)"| CoreAuth
-    BookingBackend -->|"GET /api/v1/public/services/{id}/instances<br/>HTTP sync, API key (service-to-service)<br/>polling 60s + on-demand"| CoreBackend
+    BookingBackend -->|"GET /api/v1/public/services/{id}/businesses<br/>HTTP sync, API key (service-to-service)<br/>polling 60s + on-demand"| CoreBackend
 
     CoreBackend --> CoreDB
     CoreAuth --> CoreDB
@@ -230,17 +230,17 @@ sequenceDiagram
     BA->>BB: request con Authorization: Bearer <jwt>
     activate BB
     BB->>BB: RequireTenantAccess middleware
-    BB->>CA: GET /auth/validate<br/>Header: X-Service-ID<br/>Header: X-Service-Instance-ID (opcional)
+    BB->>CA: GET /auth/validate<br/>Header: X-Service-ID<br/>Header: X-Business-ID (opcional;<br/>X-Service-Instance-ID legacy, deprecado)
     activate CA
     Note right of CA: AuthHandler.Validate:<br/>decodifica claims + resuelve grant fresco<br/>contra user_service_access (aditivo)
-    CA-->>BB: {sub, tenant_id, role, services[],<br/>service_instance_id?, resolved_role?}
+    CA-->>BB: {sub, tenant_id, role, services[],<br/>business_id?, resolved_role?}<br/>(+ service_instance_id legacy, mismo valor)
     deactivate CA
     alt 401 de core-authenticator
         BB-->>BA: 401 invalid or expired token
-    else claims.ServiceInstanceID vacío
-        BB-->>BA: 403 no resolvable service instance<br/>(NO hay fallback silencioso a tenant_id)
+    else claims.BusinessID vacío
+        BB-->>BA: 403 no resolvable business<br/>(NO hay fallback silencioso a tenant_id)
     else OK
-        BB->>BB: resolver.ByID(ctx, service_instance_id)<br/>tenants.id local == core service_instances.id
+        BB->>BB: resolver.ByID(ctx, business_id)<br/>tenants.id local == core businesses.id
         BB->>BB: EffectiveRole() = resolved_role ?? role<br/>(prefiere el rol fresco del grant table)
         BB-->>BA: 200 + datos del recurso
     end
@@ -311,7 +311,7 @@ sequenceDiagram
 
 ---
 
-### 3.7 Sincronización de instancias de tenant entre booking y core
+### 3.7 Sincronización de negocios (businesses) entre booking y core
 
 **Estado: mecanismo confirmado; sincronización de datos adicionales (nombre del tenant padre, etc.) marcada como pendiente.**
 
@@ -330,14 +330,14 @@ sequenceDiagram
         Note over Lazy: se dispara al listar tenants en el panel sysadmin
     end
 
-    W->>CB: GET /api/v1/public/services/{service_identifier}/instances<br/>Header: API key (service-to-service)
+    W->>CB: GET /api/v1/public/services/{service_identifier}/businesses<br/>Header: API key (service-to-service)
     activate CB
-    Note right of CB: TenantHandler.PublicListInstancesByService<br/>reemplazo "portal-independiente" de<br/>.../tenants (que sigue viva por compat)
-    CB-->>W: []ServiceInstance
+    Note right of CB: TenantHandler.PublicListBusinessesByService<br/>(/instances queda como alias deprecado)<br/>reemplazo "portal-independiente" de<br/>.../tenants (que sigue viva por compat)
+    CB-->>W: []Business
     deactivate CB
-    W->>BDB: upsert en tenants locales<br/>booking.tenants.id = core.service_instances.id<br/>(repoint deliberado, ver migración 00011)
+    W->>BDB: upsert en tenants locales<br/>booking.tenants.id = core.businesses.id<br/>(repoint deliberado, ver migración 00011)
 
-    Note over BDB: booking.tenants.core_tenant_id existe<br/>(columna agregada, nullable) pero NO se usa<br/>en ningún path — .../instances todavía no<br/>devuelve el tenant padre. PENDIENTE.
+    Note over BDB: booking.tenants.core_tenant_id existe<br/>(columna agregada, nullable) pero NO se usa<br/>en ningún path — .../businesses todavía no<br/>devuelve el tenant padre. PENDIENTE.
 ```
 
 ---
@@ -359,7 +359,7 @@ erDiagram
     TENANT_PORTALS ||--o{ PORTAL_SERVICES : "portal_id"
     TENANT_PORTALS ||--o{ USERS : "portal_id (nullable)"
     TENANT_SERVICES ||--o| PORTAL_SERVICES : "tenant_service_id (nullable)"
-    TENANT_SERVICES ||--o{ SERVICE_INSTANCES : "1:1 hoy, N permitido por schema"
+    TENANT_SERVICES ||--o{ BUSINESSES : "1:1 hoy, N permitido por schema"
     ROLES ||--o{ USERS : "role_id"
     USERS ||--o{ REFRESH_TOKENS : "user_id"
     USERS ||--o{ AUDIT_LOGS : "user_id"
@@ -432,7 +432,7 @@ erDiagram
         jsonb config_override
         uuid tenant_service_id FK "nullable"
     }
-    SERVICE_INSTANCES {
+    BUSINESSES {
         uuid id PK
         uuid tenant_service_id FK
     }
@@ -496,7 +496,7 @@ erDiagram
         uuid user_id FK
         uuid tenant_id FK
         uuid service_id FK
-        uuid service_instance_id FK
+        uuid business_id FK
         string role
     }
 ```
@@ -524,9 +524,9 @@ Confirmado en `core-backend/internal/seed/seed.go` (idempotente, `ON CONFLICT DO
 
 | # | Hallazgo | Evidencia | Confianza |
 |---|---|---|---|
-| 1 | **Bug probable**: `service_instance_repo.go`'s `ListByService` tiene un fallback que consulta `services.slug`, columna eliminada en la migración 014 y nunca restaurada (confirmado hasta la migración 031). Ese camino del código fallaría en runtime si se ejercita. | Lectura directa de `service_instance_repo.go` + `domain/service.go` (sin campo `Slug`) + migraciones. | Alta |
+| 1 | **Bug probable**: `business_repo.go` `ListByService` tiene un fallback que consulta `services.slug`, columna eliminada en la migración 014 y nunca restaurada (confirmado hasta la migración 031). Ese camino del código fallaría en runtime si se ejercita. | Lectura directa de `business_repo.go` + `domain/service.go` (sin campo `Slug`) + migraciones. | Alta |
 | 2 | `TenantRepository.ListByService(ctx, serviceIdentifier string)` tiene una firma que sugiere el mismo patrón ambiguo UUID-o-slug que el hallazgo #1, pero **no se verificó directamente el SQL de `tenant_repo.go`** — no leído en esta sesión. | Interfaz en `domain/tenant.go` únicamente. | Media — pendiente de verificar `tenant_repo.go` |
-| 3 | `booking.tenants.id` fue deliberadamente repointeado para almacenar `core.service_instances.id` (no `core.tenants.id`). La columna `core_tenant_id` existe pero está sin usar — `.../instances` todavía no devuelve el tenant padre. | Migración `00011_add_core_tenant_id.sql` + `client.go`/`middleware.go` de booking-backend. | Alta |
+| 3 | `booking.tenants.id` fue deliberadamente repointeado para almacenar `core.businesses.id` (no `core.tenants.id`). La columna `core_tenant_id` existe pero está sin usar — `.../businesses` todavía no devuelve el tenant padre. | Migración `00011_add_core_tenant_id.sql` + `client.go`/`middleware.go` de booking-backend. | Alta |
 | 4 | Coexisten dos modelos de autorización: el legacy basado en claims del JWT (`authz.CanAccessPortal/Tenant`) y el nuevo basado en grants frescos contra `user_service_access` (`RequireInternalAccess`). Ambos activos simultáneamente sobre rutas distintas. | `authz.go`, `internal_access.go`, `main.go` (route table). | Alta |
 | 5 | **Resuelto**: el paquete "Shell" (single-spa root-config) descrito en `auth-sequence.md` existe como código real en el repo hermano `../shell` (single-spa 6 + Vite 5). Llama a `GET /api/v1/public/portals/{portal_id}` como documenta `auth-sequence.md`, pero a diferencia de lo que ese doc afirma, **sí gestiona sesión centralizada** con su propio `AuthStore` — ver §3.1. | Lectura directa de `../shell/src/root-config.js`, `config.js`, `api.js`, `auth.js`. | Alta |
 | 6 | Dos mecanismos de login coexisten en `core-manager`: CustomEvent (`loginsuccess`, documentado en `auth-sequence.md`) y redirect/URL-hash SSO callback (`auth-callback.component.ts`, no documentado en ningún doc previo). Su relación/precedencia no está clara. | Lectura completa de ambos archivos. | Alta (existencia de ambos), Baja (relación entre ellos) |
@@ -538,9 +538,9 @@ Confirmado en `core-backend/internal/seed/seed.go` (idempotente, `ON CONFLICT DO
 ## 7. Preguntas abiertas / pendientes para el equipo
 
 - ¿Cuál es el origen real del Mecanismo B de login (SSO redirect vía `auth-callback.component.ts`)? ¿Qué lo dispara?
-- ¿`TenantRepo.ListByService` tiene el mismo bug de `slug` que `ServiceInstanceRepo.ListByService`?
+- ¿`TenantRepo.ListByService` tiene el mismo bug de `slug` que `BusinessRepo.ListByService`?
 - ¿Por qué falta la migración 026?
-- ¿Se planea completar el repoint `booking.tenants.core_tenant_id` para que `.../instances` devuelva el tenant padre?
+- ¿Se planea completar el repoint `booking.tenants.core_tenant_id` para que `.../businesses` devuelva el tenant padre?
 - El blacklist de JWT vía Redis — ¿implementado, planeado, o descartado?
 
 ---

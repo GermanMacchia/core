@@ -43,13 +43,13 @@ import { apiErrorMessage } from '../../../core/utils/api-error'
       (cancelEvent)="showAssignService.set(false)" />
 
     <lib-form
-      [formGroup]="editInstanceForm"
-      [fields]="editInstanceFields"
+      [formGroup]="editBusinessForm"
+      [fields]="editBusinessFields"
       [displayMode]="'modal'"
       [title]="'Editar negocio'"
-      [isOpen]="showEditInstance()"
-      (submitEvent)="onUpdateInstance()"
-      (cancelEvent)="showEditInstance.set(false)" />
+      [isOpen]="showEditBusiness()"
+      (submitEvent)="onUpdateBusiness()"
+      (cancelEvent)="showEditBusiness.set(false)" />
   `,
 })
 export class TenantServicesComponent implements OnInit {
@@ -66,15 +66,15 @@ export class TenantServicesComponent implements OnInit {
   // handlers against double submission instead of disabling the button.
   saving = signal(false)
   showAssignService = signal(false)
-  showEditInstance = signal(false)
+  showEditBusiness = signal(false)
   catalog = signal<Service[]>([])
-  private editInstanceTarget: TenantService | null = null
+  private editBusinessTarget: TenantService | null = null
 
   assignServiceForm = this.fb.nonNullable.group({
     service_id: ['', Validators.required],
   })
 
-  editInstanceForm = this.fb.nonNullable.group({
+  editBusinessForm = this.fb.nonNullable.group({
     name: ['', Validators.required],
     // Mirrors slugutil.Valid in core-backend.
     slug: ['', [Validators.required, Validators.maxLength(100), Validators.pattern(/^[a-z0-9]+(-[a-z0-9]+)*$/)]],
@@ -91,7 +91,7 @@ export class TenantServicesComponent implements OnInit {
     },
   ])
 
-  editInstanceFields: FormField[] = [
+  editBusinessFields: FormField[] = [
     { name: 'name', label: 'Nombre', type: 'text', required: true },
     { name: 'slug', label: 'Slug (URL pública)', type: 'text', required: true, placeholder: 'mi-negocio' },
     { name: 'logo_url', label: 'Logo (URL)', type: 'text', placeholder: 'https://...' },
@@ -100,12 +100,12 @@ export class TenantServicesComponent implements OnInit {
   serviceColumns: CompactListColumn<TenantService>[] = [
     { key: 'name', prop: 'name', header: 'Servicio', type: 'text' },
     { key: 'deployment_name', prop: 'deployment_name', header: 'Deploy', type: 'text' },
-    { key: 'instance', header: 'Negocio', type: 'text', transform: s => s.instance?.name ?? '—' },
-    { key: 'slug', header: 'Slug', type: 'text', transform: s => s.instance?.slug ?? '—' },
+    { key: 'business', header: 'Negocio', type: 'text', transform: s => s.business?.name ?? '—' },
+    { key: 'slug', header: 'Slug', type: 'text', transform: s => s.business?.slug ?? '—' },
   ]
 
   serviceActions: CompactListAction<TenantService>[] = [
-    { id: 'edit-instance', icon: 'bi bi-briefcase', tooltip: 'Editar negocio' },
+    { id: 'edit-business', icon: 'bi bi-briefcase', tooltip: 'Editar negocio' },
     { id: 'unassign', icon: 'bi bi-x-circle', tooltip: 'Desasignar', class: 'text-error' },
   ]
 
@@ -146,46 +146,46 @@ export class TenantServicesComponent implements OnInit {
         () => this.doUnassign(event.item),
         `¿Desasociar "${event.item.name}" del tenant?`,
       )
-    } else if (event.action === 'edit-instance') {
-      if (!event.item.requires_instance || !event.item.instance) {
+    } else if (event.action === 'edit-business') {
+      if (!event.item.requires_business || !event.item.business) {
         this.toast.toast({ severity: 'warning', body: 'Este servicio no tiene un negocio asociado.' })
         return
       }
-      this.editInstanceTarget = event.item
-      const logoUrl = event.item.instance.config?.['logo_url']
-      this.editInstanceForm.reset({
-        name: event.item.instance.name,
-        slug: event.item.instance.slug,
+      this.editBusinessTarget = event.item
+      const logoUrl = event.item.business.config?.['logo_url']
+      this.editBusinessForm.reset({
+        name: event.item.business.name,
+        slug: event.item.business.slug,
         logo_url: typeof logoUrl === 'string' ? logoUrl : '',
       })
-      this.showEditInstance.set(true)
+      this.showEditBusiness.set(true)
     }
   }
 
-  onUpdateInstance() {
-    const target = this.editInstanceTarget
-    if (!target || this.editInstanceForm.invalid || this.saving()) return
-    const slug = this.editInstanceForm.getRawValue().slug
-    const slugChanged = slug !== target.instance?.slug
+  onUpdateBusiness() {
+    const target = this.editBusinessTarget
+    if (!target || this.editBusinessForm.invalid || this.saving()) return
+    const slug = this.editBusinessForm.getRawValue().slug
+    const slugChanged = slug !== target.business?.slug
 
     // The slug is the business's public URL; changing it breaks every link
     // already shared, so ask before sending it.
     if (slugChanged) {
       this.infoModal.openAsConfirm(
-        () => this.saveInstance(target, slug),
-        `Cambiar el slug a "${slug}" rompe los links y QR que ya usen "${target.instance?.slug}". ¿Continuar?`,
+        () => this.saveBusiness(target, slug),
+        `Cambiar el slug a "${slug}" rompe los links y QR que ya usen "${target.business?.slug}". ¿Continuar?`,
       )
       return
     }
-    this.saveInstance(target)
+    this.saveBusiness(target)
   }
 
-  private saveInstance(target: TenantService, slug?: string) {
-    const v = this.editInstanceForm.getRawValue()
+  private saveBusiness(target: TenantService, slug?: string) {
+    const v = this.editBusinessForm.getRawValue()
     this.saving.set(true)
-    // core-backend shallow-merges `config` into the existing instance config
+    // core-backend shallow-merges `config` into the existing business config
     // (jsonb ||), so sending only logo_url keeps the other keys intact.
-    this.admin.updateTenantServiceInstance(this.tenantId(), target.id, {
+    this.admin.updateTenantServiceBusiness(this.tenantId(), target.id, {
       name: v.name,
       slug,
       config: { logo_url: v.logo_url || undefined },
@@ -193,10 +193,10 @@ export class TenantServicesComponent implements OnInit {
       next: res => {
         this.saving.set(false)
         this.services.update(list =>
-          list.map(s => (s.id === target.id ? { ...s, instance: res.data } : s)),
+          list.map(s => (s.id === target.id ? { ...s, business: res.data } : s)),
         )
-        this.showEditInstance.set(false)
-        this.editInstanceTarget = null
+        this.showEditBusiness.set(false)
+        this.editBusinessTarget = null
         this.toast.toast({ severity: 'success', body: 'Negocio actualizado.' })
       },
       error: (err: HttpErrorResponse) => {

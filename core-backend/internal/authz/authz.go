@@ -5,7 +5,7 @@
 // superadmin, or same-tenant caller via JWT claims).
 //
 // CanAccessTenant is the real grant-table-backed check: it queries
-// user_service_access (joined through service_instances -> tenant_services)
+// user_service_access (joined through businesses -> tenant_services)
 // instead of trusting a claims.Role string.
 package authz
 
@@ -45,8 +45,8 @@ func CanAccessPortal(ctx context.Context, portals domain.PortalRepository, porta
 // CanAccessTenant reports whether userID may act on tenantID's resources.
 // This is the grant-table-backed replacement for tenant_handler.go's former
 // allowTenantAccess claims check: the caller passes so long as they hold a
-// user_service_access grant on some service_instance under tenantID, or a
-// grant on the Manager/core-admin instance (Platform tenant, Manager
+// user_service_access grant on some business under tenantID, or a
+// grant on the Manager/core-admin business (Platform tenant, Manager
 // service) — the grant-based equivalent of "platform-wide superadmin".
 // Unlike CanAccessPortal, this does not read claims.Role at all.
 func CanAccessTenant(ctx context.Context, access domain.UserServiceAccessRepository, userID, tenantID uuid.UUID) bool {

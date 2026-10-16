@@ -21,16 +21,16 @@ func NewTenantServiceRepo(db *pgxpool.Pool) *TenantServiceRepo {
 
 // tenantServiceSelect is the shared column list/join shape used by
 // ListByTenant and getOne to build a domain.TenantService (with its nested
-// TenantServiceInstance, when one exists). si.* columns come back SQL NULL
-// when the LEFT JOIN finds no service_instances row; si.config is additionally
+// TenantServiceBusiness, when one exists). b.* columns come back SQL NULL
+// when the LEFT JOIN finds no businesses row; b.config is additionally
 // wrapped in COALESCE so it always scans as valid (possibly empty) JSON.
 const tenantServiceSelect = `
-	SELECT s.id, s.name, d.url, d.name, ts.is_enabled, s.requires_instance,
-	       si.id, si.name, si.slug, COALESCE(si.config, '{}'::jsonb)
+	SELECT s.id, s.name, d.url, d.name, ts.is_enabled, s.requires_business,
+	       b.id, b.name, b.slug, COALESCE(b.config, '{}'::jsonb)
 	FROM tenant_services ts
 	JOIN services s ON s.id = ts.service_id
 	JOIN deployments d ON d.id = s.deployment_id
-	LEFT JOIN service_instances si ON si.tenant_service_id = ts.id
+	LEFT JOIN businesses b ON b.tenant_service_id = ts.id
 `
 
 // rowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows (Query),
@@ -42,27 +42,27 @@ type rowScanner interface {
 func scanTenantService(row rowScanner) (*domain.TenantService, error) {
 	var (
 		ts           domain.TenantService
-		instanceID   *uuid.UUID
-		instanceName *string
-		instanceSlug *string
-		instanceCfg  domain.JSONMap
+		businessID   *uuid.UUID
+		businessName *string
+		businessSlug *string
+		businessCfg  domain.JSONMap
 	)
 	if err := row.Scan(
-		&ts.ID, &ts.Name, &ts.MFEURL, &ts.DeploymentName, &ts.IsEnabled, &ts.RequiresInstance,
-		&instanceID, &instanceName, &instanceSlug, &instanceCfg,
+		&ts.ID, &ts.Name, &ts.MFEURL, &ts.DeploymentName, &ts.IsEnabled, &ts.RequiresBusiness,
+		&businessID, &businessName, &businessSlug, &businessCfg,
 	); err != nil {
 		return nil, err
 	}
 
-	if instanceID != nil {
-		inst := domain.TenantServiceInstance{ID: *instanceID, Config: instanceCfg}
-		if instanceName != nil {
-			inst.Name = *instanceName
+	if businessID != nil {
+		biz := domain.TenantServiceBusiness{ID: *businessID, Config: businessCfg}
+		if businessName != nil {
+			biz.Name = *businessName
 		}
-		if instanceSlug != nil {
-			inst.Slug = *instanceSlug
+		if businessSlug != nil {
+			biz.Slug = *businessSlug
 		}
-		ts.Instance = &inst
+		ts.Business = &biz
 	}
 
 	return &ts, nil
@@ -89,7 +89,7 @@ func (r *TenantServiceRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID
 	return result, rows.Err()
 }
 
-// getOne builds the full TenantService (service + adhesion + instance) for a
+// getOne builds the full TenantService (service + adhesion + business) for a
 // single tenant/service pair. Used to build the response after AssignService.
 func (r *TenantServiceRepo) getOne(ctx context.Context, tenantID, serviceID uuid.UUID) (*domain.TenantService, error) {
 	row := r.db.QueryRow(ctx, tenantServiceSelect+`
@@ -121,16 +121,16 @@ func (r *TenantServiceRepo) AssignService(ctx context.Context, tenantID, service
 		return nil, fmt.Errorf("upsert tenant service: %w", err)
 	}
 
-	var requiresInstance bool
-	if err := tx.QueryRow(ctx, `SELECT requires_instance FROM services WHERE id = $1`, serviceID).Scan(&requiresInstance); err != nil {
-		return nil, fmt.Errorf("get service requires_instance: %w", err)
+	var requiresBusiness bool
+	if err := tx.QueryRow(ctx, `SELECT requires_business FROM services WHERE id = $1`, serviceID).Scan(&requiresBusiness); err != nil {
+		return nil, fmt.Errorf("get service requires_business: %w", err)
 	}
 
-	if requiresInstance {
-		var instanceID uuid.UUID
-		err = tx.QueryRow(ctx, `SELECT id FROM service_instances WHERE tenant_service_id = $1`, tenantServiceID).Scan(&instanceID)
+	if requiresBusiness {
+		var businessID uuid.UUID
+		err = tx.QueryRow(ctx, `SELECT id FROM businesses WHERE tenant_service_id = $1`, tenantServiceID).Scan(&businessID)
 		if err != nil && err != pgx.ErrNoRows {
-			return nil, fmt.Errorf("check service instance: %w", err)
+			return nil, fmt.Errorf("check business: %w", err)
 		}
 		if err == pgx.ErrNoRows {
 			var tenantName string
@@ -148,19 +148,19 @@ func (r *TenantServiceRepo) AssignService(ctx context.Context, tenantID, service
 			slug, err := slugutil.Unique(base, func(candidate string) (bool, error) {
 				var exists bool
 				err := tx.QueryRow(ctx, `
-					SELECT EXISTS (SELECT 1 FROM service_instances WHERE service_id = $1 AND slug = $2)
+					SELECT EXISTS (SELECT 1 FROM businesses WHERE service_id = $1 AND slug = $2)
 				`, serviceID, candidate).Scan(&exists)
 				return exists, err
 			})
 			if err != nil {
-				return nil, fmt.Errorf("resolve unique instance slug: %w", err)
+				return nil, fmt.Errorf("resolve unique business slug: %w", err)
 			}
 
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO service_instances (tenant_service_id, service_id, name, slug)
+				INSERT INTO businesses (tenant_service_id, service_id, name, slug)
 				VALUES ($1, $2, $3, $4)
 			`, tenantServiceID, serviceID, tenantName, slug); err != nil {
-				return nil, fmt.Errorf("insert service instance: %w", err)
+				return nil, fmt.Errorf("insert business: %w", err)
 			}
 		}
 	}
@@ -180,7 +180,7 @@ func (r *TenantServiceRepo) UnassignService(ctx context.Context, tenantID, servi
 	return err
 }
 
-// UpdateInstance partially updates the service_instances ("negocio") row
+// UpdateBusiness partially updates the businesses ("negocio") row
 // belonging to a tenant's adhesion to a service. name is applied via
 // COALESCE (nil leaves it unchanged); config, when non-nil, is shallow-merged
 // on top of the existing config via jsonb `||` (nil leaves it unchanged —
@@ -188,22 +188,22 @@ func (r *TenantServiceRepo) UnassignService(ctx context.Context, tenantID, servi
 // name, is applied via COALESCE; the caller validates its format, and a slug
 // already used by another negocio of the same service surfaces as a wrapped
 // SQLSTATE 23505 (UNIQUE(service_id, slug), migrations/035).
-// Returns pgx.ErrNoRows (wrapped) when no matching instance exists so the
+// Returns pgx.ErrNoRows (wrapped) when no matching business exists so the
 // handler can translate it to a 404.
-func (r *TenantServiceRepo) UpdateInstance(ctx context.Context, tenantID, serviceID uuid.UUID, name, slug *string, config domain.JSONMap) (*domain.TenantServiceInstance, error) {
-	var inst domain.TenantServiceInstance
+func (r *TenantServiceRepo) UpdateBusiness(ctx context.Context, tenantID, serviceID uuid.UUID, name, slug *string, config domain.JSONMap) (*domain.TenantServiceBusiness, error) {
+	var biz domain.TenantServiceBusiness
 	err := r.db.QueryRow(ctx, `
-		UPDATE service_instances si
-		SET name = COALESCE($3, si.name),
-		    slug = COALESCE($5, si.slug),
-		    config = CASE WHEN $4::jsonb IS NOT NULL THEN si.config || $4::jsonb ELSE si.config END,
+		UPDATE businesses b
+		SET name = COALESCE($3, b.name),
+		    slug = COALESCE($5, b.slug),
+		    config = CASE WHEN $4::jsonb IS NOT NULL THEN b.config || $4::jsonb ELSE b.config END,
 		    updated_at = NOW()
 		FROM tenant_services ts
-		WHERE si.tenant_service_id = ts.id AND ts.tenant_id = $1 AND ts.service_id = $2
-		RETURNING si.id, si.name, si.slug, si.config
-	`, tenantID, serviceID, name, config, slug).Scan(&inst.ID, &inst.Name, &inst.Slug, &inst.Config)
+		WHERE b.tenant_service_id = ts.id AND ts.tenant_id = $1 AND ts.service_id = $2
+		RETURNING b.id, b.name, b.slug, b.config
+	`, tenantID, serviceID, name, config, slug).Scan(&biz.ID, &biz.Name, &biz.Slug, &biz.Config)
 	if err != nil {
-		return nil, fmt.Errorf("update service instance: %w", err)
+		return nil, fmt.Errorf("update business: %w", err)
 	}
-	return &inst, nil
+	return &biz, nil
 }

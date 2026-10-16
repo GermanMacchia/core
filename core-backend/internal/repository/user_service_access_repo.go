@@ -20,15 +20,15 @@ func NewUserServiceAccessRepo(db *pgxpool.Pool) *UserServiceAccessRepo {
 }
 
 // HasTenantGrant reports whether userID holds a user_service_access grant on
-// any service_instance belonging to tenantID.
+// any business belonging to tenantID.
 func (r *UserServiceAccessRepo) HasTenantGrant(ctx context.Context, userID, tenantID uuid.UUID) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM user_service_access usa
-			JOIN service_instances si ON si.id = usa.service_instance_id
-			JOIN tenant_services ts   ON ts.id = si.tenant_service_id
+			JOIN businesses b         ON b.id = usa.business_id
+			JOIN tenant_services ts   ON ts.id = b.tenant_service_id
 			WHERE usa.user_id = $1 AND ts.tenant_id = $2
 		)
 	`, userID, tenantID).Scan(&exists)
@@ -39,15 +39,15 @@ func (r *UserServiceAccessRepo) HasTenantGrant(ctx context.Context, userID, tena
 }
 
 // HasServiceGrant reports whether userID holds a user_service_access grant
-// on any service_instance belonging to the given tenant+service combination.
+// on any business belonging to the given tenant+service combination.
 func (r *UserServiceAccessRepo) HasServiceGrant(ctx context.Context, userID, tenantID, serviceID uuid.UUID) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM user_service_access usa
-			JOIN service_instances si ON si.id = usa.service_instance_id
-			JOIN tenant_services ts   ON ts.id = si.tenant_service_id
+			JOIN businesses b         ON b.id = usa.business_id
+			JOIN tenant_services ts   ON ts.id = b.tenant_service_id
 			WHERE usa.user_id = $1 AND ts.tenant_id = $2 AND ts.service_id = $3
 		)
 	`, userID, tenantID, serviceID).Scan(&exists)
@@ -59,13 +59,13 @@ func (r *UserServiceAccessRepo) HasServiceGrant(ctx context.Context, userID, ten
 
 // serviceAccessGrantSelect is the shared column list/join shape used by
 // getGrant and ListGrantsByUser to build a domain.ServiceAccessGrant with
-// its readable service/instance/role names.
+// its readable service/business/role names.
 const serviceAccessGrantSelect = `
-	SELECT usa.id, usa.user_id, usa.service_instance_id, si.name,
+	SELECT usa.id, usa.user_id, usa.business_id, b.name,
 	       s.id, s.name, usa.role_id, r.name, usa.created_at
 	FROM user_service_access usa
-	JOIN service_instances si ON si.id = usa.service_instance_id
-	JOIN tenant_services ts   ON ts.id = si.tenant_service_id
+	JOIN businesses b         ON b.id = usa.business_id
+	JOIN tenant_services ts   ON ts.id = b.tenant_service_id
 	JOIN services s           ON s.id = ts.service_id
 	JOIN roles r              ON r.id = usa.role_id
 `
@@ -73,7 +73,7 @@ const serviceAccessGrantSelect = `
 func scanServiceAccessGrant(row rowScanner) (*domain.ServiceAccessGrant, error) {
 	var g domain.ServiceAccessGrant
 	if err := row.Scan(
-		&g.ID, &g.UserID, &g.ServiceInstanceID, &g.ServiceInstanceName,
+		&g.ID, &g.UserID, &g.BusinessID, &g.BusinessName,
 		&g.ServiceID, &g.ServiceName, &g.RoleID, &g.RoleName, &g.CreatedAt,
 	); err != nil {
 		return nil, err
@@ -82,18 +82,18 @@ func scanServiceAccessGrant(row rowScanner) (*domain.ServiceAccessGrant, error) 
 }
 
 // CreateGrant inserts a user_service_access row. It does not validate that
-// roleID belongs to serviceInstanceID's service itself — the DB trigger
+// roleID belongs to businessID's service itself — the DB trigger
 // enforce_role_service_match (migration 031) does that and raises a
 // Postgres error (SQLSTATE P0001) that the handler maps to a 400. The
 // underlying error is intentionally wrapped with %w (not swallowed) so
 // errors.As still finds the *pgconn.PgError up the chain.
-func (r *UserServiceAccessRepo) CreateGrant(ctx context.Context, userID, serviceInstanceID, roleID uuid.UUID) (*domain.ServiceAccessGrant, error) {
+func (r *UserServiceAccessRepo) CreateGrant(ctx context.Context, userID, businessID, roleID uuid.UUID) (*domain.ServiceAccessGrant, error) {
 	var grantID uuid.UUID
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO user_service_access (user_id, service_instance_id, role_id)
+		INSERT INTO user_service_access (user_id, business_id, role_id)
 		VALUES ($1, $2, $3)
 		RETURNING id
-	`, userID, serviceInstanceID, roleID).Scan(&grantID)
+	`, userID, businessID, roleID).Scan(&grantID)
 	if err != nil {
 		return nil, fmt.Errorf("create grant: %w", err)
 	}
@@ -110,11 +110,11 @@ func (r *UserServiceAccessRepo) getGrant(ctx context.Context, id uuid.UUID) (*do
 }
 
 // ListGrantsByUser returns every grant held by userID, enriched with
-// readable service/instance/role names for the admin UI's grant panel.
+// readable service/business/role names for the admin UI's grant panel.
 func (r *UserServiceAccessRepo) ListGrantsByUser(ctx context.Context, userID uuid.UUID) ([]*domain.ServiceAccessGrant, error) {
 	rows, err := r.db.Query(ctx, serviceAccessGrantSelect+`
 		WHERE usa.user_id = $1
-		ORDER BY s.name, si.name
+		ORDER BY s.name, b.name
 	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list grants by user: %w", err)

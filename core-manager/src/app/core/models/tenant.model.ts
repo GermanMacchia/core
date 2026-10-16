@@ -112,7 +112,7 @@ export interface Service {
 	description?: string | null
 	config: Record<string, unknown>
 	is_active: boolean
-	requires_instance: boolean
+	requires_business: boolean
 	created_at: string
 	updated_at: string
 }
@@ -140,7 +140,7 @@ export interface PortalService {
 	sort_order: number
 }
 
-export interface ServiceInstance {
+export interface Business {
 	id: string
 	name: string
 	slug: string
@@ -153,8 +153,8 @@ export interface TenantService {
 	mfe_url: string
 	deployment_name: string
 	is_enabled: boolean
-	requires_instance: boolean
-	instance?: ServiceInstance
+	requires_business: boolean
+	business?: Business
 }
 
 export interface TenantUser {
@@ -173,8 +173,8 @@ export interface TenantUser {
 export interface ServiceAccessGrant {
 	id: string
 	user_id: string
-	service_instance_id: string
-	service_instance_name: string
+	business_id: string
+	business_name: string
 	service_id: string
 	service_name: string
 	role_id: string
